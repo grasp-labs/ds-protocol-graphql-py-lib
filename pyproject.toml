@@ -36,7 +36,7 @@ Issues = "https://github.com/grasp-labs/ds-protocol-graphql-py-lib/issues/"
 Changelog = "https://github.com/grasp-labs/ds-protocol-graphql-py-lib/releases"
 
 [project.entry-points."ds.protocols"]
-http = "ds_protocol_graphql_py_lib"
+graphql = "ds_protocol_graphql_py_lib"
 
 
 [project.optional-dependencies]
