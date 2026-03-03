@@ -10,12 +10,20 @@ Example
 -------
 .. code-block:: python
 
-    from ds_protocol_graphql_py_lib import __version__
+    from ds_provider_graphql_py_lib import __version__
 
     print(f"Package version: {__version__}")
 """
 
 from importlib.metadata import version
 
-__version__ = version("ds-protocol-graphql-py-lib")
-__all__ = ["__version__"]
+from .dataset import GraphqlDataset, GraphqlDatasetSettings
+
+PACKAGE_NAME = "ds-protocol-graphql-py-lib"
+__version__ = version(PACKAGE_NAME)
+
+__all__ = [
+    "GraphqlDataset",
+    "GraphqlDatasetSettings",
+    "__version__",
+]

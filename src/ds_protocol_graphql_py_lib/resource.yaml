@@ -1,0 +1,10 @@
+package-name: graphql
+name: graphql
+description: GRAPHQL protocol for the DS Business Workflow
+
+dataset:
+  - name: GRAPHQL
+    type: DS.RESOURCE.DATASET.GRAPHQL
+    version: 1.0.0
+    description: GRAPHQL dataset
+    class_name: ds_protocol_graphql_py_lib.dataset.graphql.GraphqlDataset
