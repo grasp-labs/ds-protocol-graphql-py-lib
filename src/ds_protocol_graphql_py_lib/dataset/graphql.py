@@ -32,7 +32,7 @@ logger = Logger.get_logger(__name__, package=True)
 class GraphqlReadSettings(Serializable):
     """Settings specific to reading data from GraphQL API."""
 
-    query: str = ""
+    query: str
     variables: dict[str, Any] | None = None
     operation_name: str | None = None
 
@@ -41,8 +41,8 @@ class GraphqlReadSettings(Serializable):
 class GraphqlDeleteSettings(Serializable):
     """Settings specific to deleting data from GraphQL API."""
 
-    mutation: str = ""
-    identity_columns: list[str] | None = None
+    mutation: str
+    identity_columns: list[str]
     variables: dict[str, Any] | None = None
     operation_name: str | None = None
 
@@ -51,8 +51,8 @@ class GraphqlDeleteSettings(Serializable):
 class GraphqlCreateSettings(Serializable):
     """Settings specific to creating data in GraphQL API."""
 
-    mutation: str = ""
-    input_field: str = ""  # The field name for input variables (e.g., "input")
+    mutation: str
+    input_field: str  # The field name for input variables (e.g., "input")
     operation_name: str | None = None
 
 
@@ -61,9 +61,9 @@ class GraphqlDatasetSettings(DatasetSettings):
     url: str
     primary_keys: list[str] | None = None
     headers: dict[str, str] | None = None
-    read: GraphqlReadSettings = field(default_factory=GraphqlReadSettings)
-    delete: GraphqlDeleteSettings = field(default_factory=GraphqlDeleteSettings)
-    create: GraphqlCreateSettings = field(default_factory=GraphqlCreateSettings)
+    read: GraphqlReadSettings | None = None
+    delete: GraphqlDeleteSettings | None = None
+    create: GraphqlCreateSettings | None = None
 
 
 GraphqlDatasetSettingsType = TypeVar(
@@ -112,9 +112,6 @@ class GraphqlDataset(
 
         if not self.settings.read:
             raise ReadError("GraphQL read settings must be provided in settings.read")
-
-        if not self.settings.read.query:
-            raise ReadError("GraphQL query must be provided in settings.read.query")
 
         # Build GraphQL request payload
         payload: dict[str, Any] = {
@@ -170,6 +167,9 @@ class GraphqlDataset(
         if self.input is None or len(self.input) == 0:
             self.output = self.input.copy() if self.input is not None else pd.DataFrame()
             return
+
+        if self.settings.create is None:
+            raise CreateError("Delete settings must be provided in settings.create")
 
         self._validate_create_settings()
 
@@ -259,9 +259,6 @@ class GraphqlDataset(
 
         if not self.settings.delete:
             raise DeleteError("GraphQL delete settings must be provided in settings.delete")
-
-        if not self.settings.delete.mutation:
-            raise DeleteError("GraphQL mutation must be provided in settings.delete.mutation")
 
         if not self.settings.delete.identity_columns:
             raise DeleteError("Identity columns must be provided in settings.delete.identity_columns")
