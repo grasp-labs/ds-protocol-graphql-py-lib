@@ -83,7 +83,7 @@ def test_create_populates_output():
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
             create=GraphqlCreateSettings(
-                mutation="mutation CreatePost($input: CreatePostInput!) { createPost(input: $input) { id } }",
+                mutation="mutation CreatePost($input: CreatePostInput!) { createPost(input: $input) { id title body } }",
                 input_field="input",
             ),
         ),
@@ -95,7 +95,14 @@ def test_create_populates_output():
 
     mock_connection = MagicMock()
     mock_response = MagicMock()
-    mock_response.json.return_value = {"data": {"createPost": {"id": "1"}}}
+    mock_response.json.return_value = {
+        "data": {
+            "createPost": [
+                {"id": "1", "title": "Post 1", "body": "Body 1"},
+                {"id": "2", "title": "Post 2", "body": "Body 2"},
+            ]
+        }
+    }
     mock_connection.session.post.return_value = mock_response
 
     dataset.input = pd.DataFrame({"title": ["Post 1", "Post 2"], "body": ["Body 1", "Body 2"]})

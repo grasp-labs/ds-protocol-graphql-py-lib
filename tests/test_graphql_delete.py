@@ -82,7 +82,7 @@ def test_delete_populates_output():
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
             delete=GraphqlDeleteSettings(
-                mutation="query DeletePost($id: ID!) { deletePost(id: $id) }",
+                mutation="query DeletePost($id: ID!) { deletePost(id: $id) { id name } }",
                 identity_columns=["id"],
             ),
         ),
@@ -94,7 +94,14 @@ def test_delete_populates_output():
 
     mock_connection = MagicMock()
     mock_response = MagicMock()
-    mock_response.json.return_value = {"data": {"deletePost": True}}
+    mock_response.json.return_value = {
+        "data": {
+            "deletePost": [
+                {"id": 1, "name": "A"},
+                {"id": 2, "name": "B"},
+            ]
+        }
+    }
     mock_connection.session.post.return_value = mock_response
 
     dataset.input = pd.DataFrame({"id": [1, 2], "name": ["A", "B"]})

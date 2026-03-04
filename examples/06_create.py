@@ -1,13 +1,10 @@
 """
-Example demonstrating REAL GraphQL delete() mutation execution.
+Example demonstrating REAL GraphQL create() mutation execution.
 
-This example uses a REAL public GraphQL API that supports mutations:
-- GraphQL Zero API (https://graphqlzero.almansi.me/api)
-- Free, no authentication required
-- Supports deletePost mutation
-- Actually works with real data!
+This example uses GraphQL Zero API (https://graphqlzero.almansi.me/api)
+which supports create mutations.
 
-This is a real working example!
+Based on the working pattern from the attached example.
 """
 
 import uuid
@@ -23,11 +20,9 @@ from ds_resource_plugin_py_lib.common.serde.serialize import PandasSerializer
 from ds_protocol_graphql_py_lib.dataset.graphql import (
     GraphqlDataset,
     GraphqlDatasetSettings,
-    GraphqlDeleteSettings,
+    GraphqlCreateSettings,
 )
 
-
-# Create a linked service for the REAL GraphQL Zero API
 linked_service = HttpLinkedService(
     settings=HttpLinkedServiceSettings(
         host="https://graphqlzero.almansi.me/",
@@ -37,40 +32,45 @@ linked_service = HttpLinkedService(
     name="example::graphql_zero_api",
     version="1.0.0",
 )
+
 dataset = GraphqlDataset(
     deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
     serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
     settings=GraphqlDatasetSettings(
         url="https://graphqlzero.almansi.me/api",
-        delete=GraphqlDeleteSettings(
+        create=GraphqlCreateSettings(
             # Real mutation from GraphQL Zero API (single line)
-            mutation="mutation DeletePost($id: ID!) { deletePost(id: $id) }",
-            identity_columns=["id"],
-            operation_name="DeletePost",
+            mutation="mutation CreatePost($input: CreatePostInput!) { createPost(input: $input) { id title body } }",
+            # The field name for the input variable
+            input_field="input",
+            operation_name="CreatePost",
         ),
     ),
     linked_service=linked_service,
     id=uuid.uuid4(),
-    name="example::delete_posts_dataset",
+    name="example::create_posts_dataset",
     version="1.0.0",
 )
 
+# Prepare rows to create
 dataset.input = pd.DataFrame(
     {
-        "id": ["1", "2", "3"],
-        "title": ["Post 1", "Post 2", "Post 3"],
+        "title": ["My Test Post 1"],
+        "body": [
+            "This is my first post created via GraphQL",
+        ],
     }
 )
 
-print("\nInput rows to delete:")
+print("\nInput rows to create:")
 print(dataset.input)
 
-# Connect and execute the delete operation
+# Connect and execute the create operation
 print("\nConnecting to GraphQL Zero API...")
 linked_service.connect()
 
-print("Executing delete()...")
-dataset.delete()
+print("Executing create()...")
+dataset.create()
 
-print("\nDeleted rows (from self.output):")
+print("\nCreated rows (from self.output):")
 print(dataset.output)
