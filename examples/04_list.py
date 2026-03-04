@@ -24,8 +24,6 @@ linked_service = HttpLinkedService(
 
 # Create a GraphQL dataset and list available queries
 dataset = GraphqlDataset(
-    deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
-    serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
     settings=GraphqlDatasetSettings(
         url="https://graphql.country/graphql",
     ),

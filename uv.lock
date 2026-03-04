@@ -496,6 +496,7 @@ name = "ds-protocol-graphql-py-lib"
 version = "0.1.0a1"
 source = { editable = "." }
 dependencies = [
+    { name = "ds-common-serde-py-lib" },
     { name = "ds-protocol-http-py-lib" },
     { name = "ds-resource-plugin-py-lib" },
     { name = "requests" },
@@ -531,6 +532,7 @@ test = [
 requires-dist = [
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7.0" },
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.0.0" },
+    { name = "ds-common-serde-py-lib", specifier = ">=0.1.0b1,<1.0.0" },
     { name = "ds-protocol-http-py-lib", specifier = ">=0.1.0b2,<1.0.0" },
     { name = "ds-resource-plugin-py-lib", specifier = ">=0.1.0rc1,<1.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.7.0" },

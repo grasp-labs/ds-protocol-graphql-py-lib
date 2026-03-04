@@ -29,6 +29,7 @@ Example:
     >>> dataset.read()
 """
 
+import builtins
 from dataclasses import dataclass, field
 from typing import Any, Generic, NoReturn, TypeVar
 
@@ -51,10 +52,10 @@ from ds_resource_plugin_py_lib.common.resource.errors import NotSupportedError
 from ds_resource_plugin_py_lib.common.resource.linked_service.errors import (
     ConnectionError,
 )
-from ds_resource_plugin_py_lib.common.serde.deserialize import PandasDeserializer
 from ds_resource_plugin_py_lib.common.serde.serialize import PandasSerializer
 
 from ..enums import ResourceType
+from ..serde.deserializer import GraphqlDeserializer
 
 logger = Logger.get_logger(__name__, package=True)
 
@@ -109,7 +110,7 @@ class GraphqlDataset(
         HttpLinkedServiceType,
         GraphqlDatasetSettingsType,
         PandasSerializer,
-        PandasDeserializer,
+        GraphqlDeserializer,
     ],
     Generic[HttpLinkedServiceType, GraphqlDatasetSettingsType],
 ):
@@ -123,20 +124,35 @@ class GraphqlDataset(
     serializer: PandasSerializer | None = field(
         default_factory=lambda: PandasSerializer(format=DatasetStorageFormatType.JSON),
     )
-    deserializer: PandasDeserializer | None = field(
-        default_factory=lambda: PandasDeserializer(format=DatasetStorageFormatType.JSON),
+    deserializer: GraphqlDeserializer | None = field(
+        default_factory=lambda: GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
     )
 
     @property
     def type(self) -> ResourceType:
         return ResourceType.DATASET
 
+    @property
+    def supports_checkpoint(self) -> bool:
+        """
+        Indicate whether this provider supports incremental loads via checkpointing.
+
+        GraphQL provider does not yet support checkpoint-based incremental loads.
+        All reads are full loads.
+        """
+        return False
+
     def read(self) -> None:
         """
         Read Graphql dataset.
 
         Sends a GraphQL query to the endpoint with the query, variables, and operation name
-        specified in settings.read.
+        specified in settings.read. Populates self.output with the result as a DataFrame.
+
+        Handles various GraphQL response patterns via GraphqlDeserializer:
+        - Direct arrays: {"data": {"users": [...]}}
+        - Relay connections: {"data": {"users": {"edges": [{"node": {...}}]}}}
+        - Single objects: {"data": {"user": {...}}}
         """
         if self.linked_service.connection is None:
             raise ConnectionError(message="Connection is not initialized.") from None
@@ -144,48 +160,46 @@ class GraphqlDataset(
         if not self.settings.read:
             raise ReadError("GraphQL read settings must be provided in settings.read")
 
-        # Build GraphQL request payload
-        payload: dict[str, Any] = {
-            "query": self.settings.read.query,
-        }
+        if not self.deserializer:
+            raise ReadError("Deserializer is not configured for GraphQL dataset")
 
-        if self.settings.read.variables:
-            payload["variables"] = self.settings.read.variables
+        try:
+            # Build GraphQL request payload
+            payload: dict[str, Any] = {
+                "query": self.settings.read.query,
+            }
 
-        if self.settings.read.operation_name:
-            payload["operationName"] = self.settings.read.operation_name
+            if self.settings.read.variables:
+                payload["variables"] = self.settings.read.variables
 
-        result = self.linked_service.connection.session.post(
-            url=self.settings.url,
-            json=payload,
-            headers=self.settings.headers,
-        )
+            if self.settings.read.operation_name:
+                payload["operationName"] = self.settings.read.operation_name
 
-        self.output = result.json()
+            result = self.linked_service.connection.session.post(
+                url=self.settings.url,
+                json=payload,
+                headers=self.settings.headers,
+            )
 
-    def _validate_create_settings(self) -> None:
-        """Validate create settings are properly configured."""
-        if self.linked_service.connection is None:
-            raise ConnectionError(message="Connection is not initialized.") from None
-        if not self.settings.create:
-            raise CreateError("GraphQL create settings must be provided in settings.create")
-        if not self.settings.create.mutation:
-            raise CreateError("GraphQL mutation must be provided in settings.create.mutation")
-        if not self.settings.create.input_field:
-            raise CreateError("Input field name must be provided in settings.create.input_field")
+            result.raise_for_status()
+            response_data = result.json()
 
-    def _extract_created_rows(self, response_data: dict[str, Any], rows_data: list[dict[str, Any]]) -> list[Any]:
-        """Extract created rows from GraphQL response."""
-        if "data" not in response_data:
-            return rows_data
+            # Check for GraphQL errors
+            if "errors" in response_data:
+                raise ReadError(
+                    message="GraphQL query failed",
+                    details={"errors": response_data.get("errors")},
+                )
 
-        response_payload = response_data["data"]
-        if isinstance(response_payload, dict):
-            mutation_keys = [k for k in response_payload if k not in ["__typename"]]
-            if len(mutation_keys) == 1:
-                response_payload = response_payload[mutation_keys[0]]
+            self.output = self.deserializer.deserialize_graphql(response_data)
 
-        return response_payload if isinstance(response_payload, list) else [response_payload]
+        except ReadError:
+            raise
+        except Exception as e:
+            raise ReadError(
+                message=f"Failed to read from GraphQL: {e!s}",
+                details={"url": self.settings.url},
+            ) from e
 
     def create(self) -> None:
         """
@@ -474,3 +488,28 @@ class GraphqlDataset(
 
     def close(self) -> None:
         pass
+
+    def _validate_create_settings(self) -> None:
+        """Validate create settings are properly configured."""
+        if self.linked_service.connection is None:
+            raise ConnectionError(message="Connection is not initialized.") from None
+        if not self.settings.create:
+            raise CreateError("GraphQL create settings must be provided in settings.create")
+        if not self.settings.create.mutation:
+            raise CreateError("GraphQL mutation must be provided in settings.create.mutation")
+        if not self.settings.create.input_field:
+            raise CreateError("Input field name must be provided in settings.create.input_field")
+
+    @staticmethod
+    def _extract_created_rows(response_data: dict[str, Any], rows_data: builtins.list[dict[str, Any]]) -> builtins.list[Any]:
+        """Extract created rows from GraphQL response."""
+        if "data" not in response_data:
+            return rows_data
+
+        response_payload = response_data["data"]
+        if isinstance(response_payload, dict):
+            mutation_keys = [k for k in response_payload if k not in ["__typename"]]
+            if len(mutation_keys) == 1:
+                response_payload = response_payload[mutation_keys[0]]
+
+        return response_payload if isinstance(response_payload, list) else [response_payload]

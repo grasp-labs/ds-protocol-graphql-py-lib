@@ -38,8 +38,6 @@ linked_service = HttpLinkedService(
     version="1.0.0",
 )
 dataset = GraphqlDataset(
-    deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
-    serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
     settings=GraphqlDatasetSettings(
         url="https://graphqlzero.almansi.me/api",
         delete=GraphqlDeleteSettings(

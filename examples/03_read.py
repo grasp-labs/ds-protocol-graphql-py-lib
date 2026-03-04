@@ -6,6 +6,7 @@ from ds_resource_plugin_py_lib.common.resource.dataset import DatasetStorageForm
 from ds_resource_plugin_py_lib.common.serde.deserialize import PandasDeserializer
 from ds_resource_plugin_py_lib.common.serde.serialize import PandasSerializer
 
+from ds_protocol_graphql_py_lib import GraphqlDeserializer
 from ds_protocol_graphql_py_lib.dataset.graphql import (
     GraphqlDataset,
     GraphqlDatasetSettings,
@@ -25,8 +26,7 @@ linked_service = HttpLinkedService(
 
 # GraphQL query with variables - Query countries by region using variables
 dataset = GraphqlDataset(
-    deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
-    serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
+    deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
     settings=GraphqlDatasetSettings(
         url="https://graphql.country/graphql",
         read=GraphqlReadSettings(

@@ -9,6 +9,7 @@ description = "A Python package from the DS library collection"
 dependencies = [
     "ds-resource-plugin-py-lib>=0.1.0rc1,<1.0.0",
     "ds-protocol-http-py-lib>=0.1.0b2,<1.0.0",
+    "ds-common-serde-py-lib>=0.1.0b1,<1.0.0",
     "requests>=2.32.0,<3.0.0",
 ]
 requires-python = ">=3.11"

@@ -34,8 +34,6 @@ linked_service = HttpLinkedService(
 )
 
 dataset = GraphqlDataset(
-    deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
-    serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
     settings=GraphqlDatasetSettings(
         url="https://graphqlzero.almansi.me/api",
         create=GraphqlCreateSettings(

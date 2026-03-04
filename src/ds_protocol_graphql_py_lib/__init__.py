@@ -17,6 +17,8 @@ Example
 
 from importlib.metadata import version
 
+from ds_protocol_graphql_py_lib.serde.deserializer import GraphqlDeserializer
+
 from .dataset import GraphqlDataset, GraphqlDatasetSettings
 
 PACKAGE_NAME = "ds-protocol-graphql-py-lib"
@@ -25,5 +27,6 @@ __version__ = version(PACKAGE_NAME)
 __all__ = [
     "GraphqlDataset",
     "GraphqlDatasetSettings",
+    "GraphqlDeserializer",
     "__version__",
 ]
