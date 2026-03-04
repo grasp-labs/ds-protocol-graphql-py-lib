@@ -1,3 +1,34 @@
+"""
+**File:** ``graphql.py``
+**Region:** ``ds_protocol_graphql_py_lib/dataset``
+
+GraphQL dataset implementation for CRUD operations via GraphQL API.
+
+Example:
+    >>> linked_service = HttpLinkedService(
+    ...     settings=HttpLinkedServiceSettings(
+    ...         host="https://api.example.graphql/graphql",
+    ...         auth_type=AuthType.NO_AUTH,
+    ...     ),
+    ...     id="service-id",
+    ...     name="graphql_service",
+    ...     version="1.0.0",
+    ... )
+    >>> dataset = GraphqlDataset(
+    ...     linked_service=linked_service,
+    ...     settings=GraphqlDatasetSettings(
+    ...         url="https://api.example.graphql/graphql",
+    ...         read=GraphqlReadSettings(
+    ...             query="{ users { id name email } }"
+    ...         ),
+    ...     ),
+    ...     id="dataset-id",
+    ...     name="graphql_dataset",
+    ...     version="1.0.0",
+    ... )
+    >>> dataset.read()
+"""
+
 from dataclasses import dataclass, field
 from typing import Any, Generic, NoReturn, TypeVar
 
@@ -169,7 +200,7 @@ class GraphqlDataset(
             return
 
         if self.settings.create is None:
-            raise CreateError("Delete settings must be provided in settings.create")
+            raise CreateError("Create settings must be provided in settings.create")
 
         self._validate_create_settings()
 

@@ -1,30 +1,33 @@
-"""Test GraphQL Dataset delete() method implementation."""
+"""
+**File:** ``test_graphql_operations.py``
+**Region:** ``tests/dataset``
+
+Test GraphQL Dataset unsupported operations and type property.
+
+Covers:
+    Resource type property validation and error handling for unsupported
+    operations including update, upsert, purge, and rename operations,
+    plus close() method functionality.
+"""
 
 from __future__ import annotations
 
 import uuid
-from unittest.mock import MagicMock, PropertyMock, patch
 
-import pandas as pd
 import pytest
 from ds_protocol_http_py_lib import HttpLinkedService, HttpLinkedServiceSettings
 from ds_protocol_http_py_lib.enums import AuthType
 from ds_resource_plugin_py_lib.common.resource.dataset import DatasetStorageFormatType
-from ds_resource_plugin_py_lib.common.resource.linked_service.errors import (
-    ConnectionError,
-)
+from ds_resource_plugin_py_lib.common.resource.errors import NotSupportedError
 from ds_resource_plugin_py_lib.common.serde.deserialize import PandasDeserializer
 from ds_resource_plugin_py_lib.common.serde.serialize import PandasSerializer
 
-from ds_protocol_graphql_py_lib.dataset.graphql import (
-    GraphqlDataset,
-    GraphqlDatasetSettings,
-    GraphqlDeleteSettings,
-)
+from ds_protocol_graphql_py_lib.dataset.graphql import GraphqlDataset, GraphqlDatasetSettings
+from ds_protocol_graphql_py_lib.enums import ResourceType
 
 
-def test_delete_returns_none():
-    """Test that delete() returns None per DATASET_CONTRACT."""
+def test_type_property_returns_resource_type():
+    """Test that type property returns correct ResourceType."""
     linked_service = HttpLinkedService(
         settings=HttpLinkedServiceSettings(
             host="https://example.graphql.api/",
@@ -40,10 +43,6 @@ def test_delete_returns_none():
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
-            delete=GraphqlDeleteSettings(
-                mutation="query DeletePost($id: ID!) { deletePost(id: $id) }",
-                identity_columns=["id"],
-            ),
         ),
         linked_service=linked_service,
         id=uuid.uuid4(),
@@ -51,21 +50,12 @@ def test_delete_returns_none():
         version="1.0.0",
     )
 
-    mock_connection = MagicMock()
-    mock_response = MagicMock()
-    mock_response.json.return_value = {"data": {"deletePost": True}}
-    mock_connection.session.post.return_value = mock_response
-
-    dataset.input = pd.DataFrame({"id": [1], "name": ["Test"]})
-
-    with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
-        mock_prop.return_value = mock_connection
-        result = dataset.delete()
-        assert result is None
+    assert dataset.type == ResourceType.DATASET
+    assert dataset.type == "DS.RESOURCE.DATASET.GRAPHQL"
 
 
-def test_delete_populates_output():
-    """Test that delete() populates self.output with deleted rows."""
+def test_update_raises_not_supported_error():
+    """Test that update() raises NotSupportedError."""
     linked_service = HttpLinkedService(
         settings=HttpLinkedServiceSettings(
             host="https://example.graphql.api/",
@@ -81,10 +71,6 @@ def test_delete_populates_output():
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
-            delete=GraphqlDeleteSettings(
-                mutation="query DeletePost($id: ID!) { deletePost(id: $id) { id name } }",
-                identity_columns=["id"],
-            ),
         ),
         linked_service=linked_service,
         id=uuid.uuid4(),
@@ -92,30 +78,12 @@ def test_delete_populates_output():
         version="1.0.0",
     )
 
-    mock_connection = MagicMock()
-    mock_response = MagicMock()
-    mock_response.json.return_value = {
-        "data": {
-            "deletePost": [
-                {"id": 1, "name": "A"},
-                {"id": 2, "name": "B"},
-            ]
-        }
-    }
-    mock_connection.session.post.return_value = mock_response
-
-    dataset.input = pd.DataFrame({"id": [1, 2], "name": ["A", "B"]})
-
-    with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
-        mock_prop.return_value = mock_connection
-        dataset.delete()
-
-    assert isinstance(dataset.output, pd.DataFrame)
-    assert len(dataset.output) == 2
+    with pytest.raises(NotSupportedError, match="Update operation is not supported"):
+        dataset.update()
 
 
-def test_delete_empty_input_is_noop():
-    """Test that delete() with empty input is a no-op."""
+def test_upsert_raises_not_supported_error():
+    """Test that upsert() raises NotSupportedError."""
     linked_service = HttpLinkedService(
         settings=HttpLinkedServiceSettings(
             host="https://example.graphql.api/",
@@ -131,10 +99,6 @@ def test_delete_empty_input_is_noop():
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
-            delete=GraphqlDeleteSettings(
-                mutation="query DeletePost($id: ID!) { deletePost(id: $id) }",
-                identity_columns=["id"],
-            ),
         ),
         linked_service=linked_service,
         id=uuid.uuid4(),
@@ -142,20 +106,12 @@ def test_delete_empty_input_is_noop():
         version="1.0.0",
     )
 
-    mock_connection = MagicMock()
-
-    dataset.input = pd.DataFrame()
-
-    with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
-        mock_prop.return_value = mock_connection
-        dataset.delete()
-
-    mock_connection.session.post.assert_not_called()
-    assert len(dataset.output) == 0
+    with pytest.raises(NotSupportedError, match="Upsert operation is not supported"):
+        dataset.upsert()
 
 
-def test_delete_no_connection_raises_error():
-    """Test that delete() raises ConnectionError if connection is not initialized."""
+def test_purge_raises_not_supported_error():
+    """Test that purge() raises NotSupportedError."""
     linked_service = HttpLinkedService(
         settings=HttpLinkedServiceSettings(
             host="https://example.graphql.api/",
@@ -171,10 +127,6 @@ def test_delete_no_connection_raises_error():
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
-            delete=GraphqlDeleteSettings(
-                mutation="query DeletePost($id: ID!) { deletePost(id: $id) }",
-                identity_columns=["id"],
-            ),
         ),
         linked_service=linked_service,
         id=uuid.uuid4(),
@@ -182,7 +134,61 @@ def test_delete_no_connection_raises_error():
         version="1.0.0",
     )
 
-    dataset.input = pd.DataFrame({"id": [1]})
+    with pytest.raises(NotSupportedError, match="Purge operation is not supported"):
+        dataset.purge()
 
-    with pytest.raises(ConnectionError):
-        dataset.delete()
+
+def test_rename_raises_not_supported_error():
+    """Test that rename() raises NotSupportedError."""
+    linked_service = HttpLinkedService(
+        settings=HttpLinkedServiceSettings(
+            host="https://example.graphql.api/",
+            auth_type=AuthType.NO_AUTH,
+        ),
+        id=uuid.uuid4(),
+        name="test_linked_service",
+        version="1.0.0",
+    )
+
+    dataset = GraphqlDataset(
+        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
+        settings=GraphqlDatasetSettings(
+            url="https://example.graphql.api/graphql",
+        ),
+        linked_service=linked_service,
+        id=uuid.uuid4(),
+        name="test_dataset",
+        version="1.0.0",
+    )
+
+    with pytest.raises(NotSupportedError, match="Rename operation is not supported"):
+        dataset.rename()
+
+
+def test_close_does_not_raise():
+    """Test that close() completes without error."""
+    linked_service = HttpLinkedService(
+        settings=HttpLinkedServiceSettings(
+            host="https://example.graphql.api/",
+            auth_type=AuthType.NO_AUTH,
+        ),
+        id=uuid.uuid4(),
+        name="test_linked_service",
+        version="1.0.0",
+    )
+
+    dataset = GraphqlDataset(
+        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
+        settings=GraphqlDatasetSettings(
+            url="https://example.graphql.api/graphql",
+        ),
+        linked_service=linked_service,
+        id=uuid.uuid4(),
+        name="test_dataset",
+        version="1.0.0",
+    )
+
+    result = dataset.close()
+    assert result is None

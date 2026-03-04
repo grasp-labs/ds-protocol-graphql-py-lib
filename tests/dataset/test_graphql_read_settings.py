@@ -1,5 +1,13 @@
-#!/usr/bin/env python3
-"""Test script to verify GraphQL read functionality works correctly."""
+"""
+**File:** ``test_graphql_read_settings.py``
+**Region:** ``tests/dataset``
+
+Test script to verify GraphQL read functionality works correctly.
+
+Covers:
+    GraphqlReadSettings dataclass instantiation and field validation
+    including query, variables, and operation_name parameters.
+"""
 
 import sys
 
