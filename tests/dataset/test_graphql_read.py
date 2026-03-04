@@ -398,3 +398,70 @@ def test_read_nested_dict_with_array_field():
     assert dataset.output.iloc[1]["name"] == "film"
     assert dataset.output.iloc[2]["name"] == "allPeople"
     assert dataset.output.iloc[3]["name"] == "person"
+
+
+def test_read_no_deserializer_raises_error():
+    """Test that read() raises ReadError if deserializer is not configured."""
+    linked_service = HttpLinkedService(
+        settings=HttpLinkedServiceSettings(
+            host="https://example.graphql.api/",
+            auth_type=AuthType.NO_AUTH,
+        ),
+        id=uuid.uuid4(),
+        name="test_linked_service",
+        version="1.0.0",
+    )
+
+    dataset = GraphqlDataset(
+        deserializer=None,
+        settings=GraphqlDatasetSettings(
+            url="https://example.graphql.api/graphql",
+            read=GraphqlReadSettings(query="{ allPosts { id } }"),
+        ),
+        linked_service=linked_service,
+        id=uuid.uuid4(),
+        name="test_dataset",
+        version="1.0.0",
+    )
+
+    mock_connection = MagicMock()
+
+    with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
+        mock_prop.return_value = mock_connection
+        with pytest.raises(ReadError, match="Deserializer is not configured"):
+            dataset.read()
+
+
+def test_read_json_parse_error_wrapped():
+    """Test that JSON parse errors are wrapped in ReadError."""
+    linked_service = HttpLinkedService(
+        settings=HttpLinkedServiceSettings(
+            host="https://example.graphql.api/",
+            auth_type=AuthType.NO_AUTH,
+        ),
+        id=uuid.uuid4(),
+        name="test_linked_service",
+        version="1.0.0",
+    )
+
+    dataset = GraphqlDataset(
+        settings=GraphqlDatasetSettings(
+            url="https://example.graphql.api/graphql",
+            read=GraphqlReadSettings(query="{ allPosts { id } }"),
+        ),
+        linked_service=linked_service,
+        id=uuid.uuid4(),
+        name="test_dataset",
+        version="1.0.0",
+    )
+
+    mock_connection = MagicMock()
+    mock_response = MagicMock()
+    mock_response.raise_for_status.return_value = None
+    mock_response.json.side_effect = ValueError("Invalid JSON")
+    mock_connection.session.post.return_value = mock_response
+
+    with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
+        mock_prop.return_value = mock_connection
+        with pytest.raises(ReadError, match="Failed to read from GraphQL"):
+            dataset.read()

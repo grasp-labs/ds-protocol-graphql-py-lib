@@ -41,10 +41,8 @@ class GraphqlDeserializer(PandasDeserializer):
         if not isinstance(data, dict):
             return pd.DataFrame()
 
-        # Extract from GraphQL response envelope if present
         extracted_data = data.get("data", data)
 
-        # Parse the extracted data
         return self._parse_graphql_data(extracted_data)
 
     def _parse_graphql_data(self, data: Any) -> pd.DataFrame:
@@ -56,15 +54,12 @@ class GraphqlDeserializer(PandasDeserializer):
         if data is None:
             return pd.DataFrame()
 
-        # Already a list - convert directly
         if isinstance(data, list):
             return pd.DataFrame(data)
 
-        # Not a dict - wrap in list
         if not isinstance(data, dict):
             return pd.DataFrame([data])
 
-        # Handle single-key nested responses (common GraphQL pattern)
         if len(data) == 1:
             nested_value = next(iter(data.values()))
 
@@ -84,7 +79,6 @@ class GraphqlDeserializer(PandasDeserializer):
         if "edges" in data:
             return self._extract_relay_nodes(data)
 
-        # Single object - wrap in list
         return pd.DataFrame([data])
 
     def _handle_nested_dict(self, nested_value: dict[str, Any]) -> pd.DataFrame:
@@ -123,6 +117,5 @@ class GraphqlDeserializer(PandasDeserializer):
         if not isinstance(edges, list):
             return pd.DataFrame()
 
-        # Extract node from each edge
         nodes = [edge.get("node", edge) for edge in edges if edge]
         return pd.DataFrame(nodes)

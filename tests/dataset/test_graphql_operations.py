@@ -54,6 +54,31 @@ def test_type_property_returns_resource_type():
     assert dataset.type == "DS.RESOURCE.DATASET.GRAPHQL"
 
 
+def test_supports_checkpoint_returns_false():
+    """Test that supports_checkpoint property returns False."""
+    linked_service = HttpLinkedService(
+        settings=HttpLinkedServiceSettings(
+            host="https://example.graphql.api/",
+            auth_type=AuthType.NO_AUTH,
+        ),
+        id=uuid.uuid4(),
+        name="test_linked_service",
+        version="1.0.0",
+    )
+
+    dataset = GraphqlDataset(
+        settings=GraphqlDatasetSettings(
+            url="https://example.graphql.api/graphql",
+        ),
+        linked_service=linked_service,
+        id=uuid.uuid4(),
+        name="test_dataset",
+        version="1.0.0",
+    )
+
+    assert dataset.supports_checkpoint is False
+
+
 def test_update_raises_not_supported_error():
     """Test that update() raises NotSupportedError."""
     linked_service = HttpLinkedService(

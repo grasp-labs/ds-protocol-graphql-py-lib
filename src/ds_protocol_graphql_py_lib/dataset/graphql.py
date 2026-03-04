@@ -29,7 +29,6 @@ Example:
     >>> dataset.read()
 """
 
-import builtins
 from dataclasses import dataclass, field
 from typing import Any, Generic, NoReturn, TypeVar
 
@@ -164,7 +163,6 @@ class GraphqlDataset(
             raise ReadError("Deserializer is not configured for GraphQL dataset")
 
         try:
-            # Build GraphQL request payload
             payload: dict[str, Any] = {
                 "query": self.settings.read.query,
             }
@@ -184,7 +182,6 @@ class GraphqlDataset(
             result.raise_for_status()
             response_data = result.json()
 
-            # Check for GraphQL errors
             if "errors" in response_data:
                 raise ReadError(
                     message="GraphQL query failed",
@@ -216,28 +213,23 @@ class GraphqlDataset(
         if self.settings.create is None:
             raise CreateError("Create settings must be provided in settings.create")
 
+        if not self.deserializer:
+            raise CreateError("Deserializer is not configured for GraphQL dataset")
+
         self._validate_create_settings()
 
-        # After validation, we know these are not None
-        create_settings = self.settings.create
-
         try:
-            # Convert all rows to list of dictionaries
             rows_data = self.input.to_dict(orient="records")
-
-            # Build variables - send as single object if one row, array if multiple
             input_value = rows_data[0] if len(rows_data) == 1 else rows_data
 
-            variables = {create_settings.input_field: input_value}
+            variables = {self.settings.create.input_field: input_value}
 
-            # Build GraphQL request payload
-            payload: dict[str, Any] = {"query": create_settings.mutation}
+            payload: dict[str, Any] = {"query": self.settings.create.mutation}
             if variables:
                 payload["variables"] = variables
-            if create_settings.operation_name:
-                payload["operationName"] = create_settings.operation_name
+            if self.settings.create.operation_name:
+                payload["operationName"] = self.settings.create.operation_name
 
-            # Execute the mutation (single atomic request)
             result = self.linked_service.connection.session.post(
                 url=self.settings.url,
                 json=payload,
@@ -247,7 +239,6 @@ class GraphqlDataset(
             result.raise_for_status()
             response_data = result.json()
 
-            # Check for GraphQL errors
             if "errors" in response_data:
                 raise CreateError(
                     message="GraphQL create mutation failed",
@@ -257,11 +248,11 @@ class GraphqlDataset(
                     },
                 )
 
-            # Extract created rows from response
-            created_rows = self._extract_created_rows(response_data, rows_data)
-
-            # Per DATASET_CONTRACT: populate self.output with created rows
-            self.output = pd.DataFrame(created_rows) if created_rows else self.input.copy()
+            if "data" in response_data:
+                df_result = self.deserializer.deserialize_graphql(response_data)
+                self.output = df_result if not df_result.empty else self.input.copy()
+            else:
+                self.output = self.input.copy()
 
         except CreateError:
             raise
@@ -270,7 +261,7 @@ class GraphqlDataset(
                 message=f"Failed to create rows via GraphQL: {e!s}",
                 details={
                     "url": self.settings.url,
-                    "input_field": create_settings.input_field,
+                    "input_field": self.settings.create.input_field,
                     "row_count": len(self.input),
                 },
             ) from e
@@ -305,10 +296,9 @@ class GraphqlDataset(
         if not self.settings.delete:
             raise DeleteError("GraphQL delete settings must be provided in settings.delete")
 
-        if not self.settings.delete.identity_columns:
-            raise DeleteError("Identity columns must be provided in settings.delete.identity_columns")
+        if not self.deserializer:
+            raise DeleteError("Deserializer is not configured for GraphQL dataset")
 
-        # Verify identity columns exist in input
         for col in self.settings.delete.identity_columns:
             if col not in self.input.columns:
                 raise DeleteError(
@@ -317,11 +307,7 @@ class GraphqlDataset(
                 )
 
         try:
-            # Convert all rows to list of dictionaries
             rows_data = self.input.to_dict(orient="records")
-
-            # Build variables using identity column values
-            # Identity columns become GraphQL variable names
             variables = {}
 
             if len(rows_data) == 1:
@@ -358,7 +344,6 @@ class GraphqlDataset(
             result.raise_for_status()
             response_data = result.json()
 
-            # Check for GraphQL errors
             if "errors" in response_data:
                 raise DeleteError(
                     message="GraphQL delete mutation failed",
@@ -368,22 +353,11 @@ class GraphqlDataset(
                     },
                 )
 
-            # Extract deleted rows from response
             if "data" in response_data:
-                response_payload = response_data["data"]
-                # Unwrap nested mutation response
-                if isinstance(response_payload, dict):
-                    mutation_keys = [k for k in response_payload if k not in ["__typename"]]
-                    if len(mutation_keys) == 1:
-                        response_payload = response_payload[mutation_keys[0]]
-
-                # Convert to list if needed
-                deleted_rows = response_payload if isinstance(response_payload, list) else [response_payload]
+                df_result = self.deserializer.deserialize_graphql(response_data)
+                self.output = df_result if not df_result.empty else self.input.copy()
             else:
-                deleted_rows = rows_data
-
-            # Per DATASET_CONTRACT: populate self.output with deleted rows
-            self.output = pd.DataFrame(deleted_rows) if deleted_rows else self.input.copy()
+                self.output = self.input.copy()
 
         except DeleteError:
             raise
@@ -464,7 +438,6 @@ class GraphqlDataset(
             query_type = response_data.get("data", {}).get("__schema", {}).get("queryType", {})
             fields = query_type.get("fields", [])
 
-            # Transform into a DataFrame
             resources = []
             for field in fields:
                 arg_names = [arg.get("name") for arg in field.get("args", [])]
@@ -499,17 +472,3 @@ class GraphqlDataset(
             raise CreateError("GraphQL mutation must be provided in settings.create.mutation")
         if not self.settings.create.input_field:
             raise CreateError("Input field name must be provided in settings.create.input_field")
-
-    @staticmethod
-    def _extract_created_rows(response_data: dict[str, Any], rows_data: builtins.list[dict[str, Any]]) -> builtins.list[Any]:
-        """Extract created rows from GraphQL response."""
-        if "data" not in response_data:
-            return rows_data
-
-        response_payload = response_data["data"]
-        if isinstance(response_payload, dict):
-            mutation_keys = [k for k in response_payload if k not in ["__typename"]]
-            if len(mutation_keys) == 1:
-                response_payload = response_payload[mutation_keys[0]]
-
-        return response_payload if isinstance(response_payload, list) else [response_payload]

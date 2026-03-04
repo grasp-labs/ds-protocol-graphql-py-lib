@@ -25,7 +25,6 @@ from ds_resource_plugin_py_lib.common.resource.dataset.errors import DeleteError
 from ds_resource_plugin_py_lib.common.resource.linked_service.errors import (
     ConnectionError,
 )
-from ds_resource_plugin_py_lib.common.serde.deserialize import PandasDeserializer
 from ds_resource_plugin_py_lib.common.serde.serialize import PandasSerializer
 
 from ds_protocol_graphql_py_lib.dataset.graphql import (
@@ -33,6 +32,7 @@ from ds_protocol_graphql_py_lib.dataset.graphql import (
     GraphqlDatasetSettings,
     GraphqlDeleteSettings,
 )
+from ds_protocol_graphql_py_lib.serde.deserializer import GraphqlDeserializer
 
 
 def test_delete_returns_none():
@@ -48,7 +48,7 @@ def test_delete_returns_none():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -89,7 +89,7 @@ def test_delete_populates_output():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -139,7 +139,7 @@ def test_delete_empty_input_is_noop():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -179,7 +179,7 @@ def test_delete_no_connection_raises_error():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -213,7 +213,7 @@ def test_delete_no_settings_raises_error():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -233,43 +233,6 @@ def test_delete_no_settings_raises_error():
             dataset.delete()
 
 
-def test_delete_missing_identity_columns_raises_error():
-    """Test that delete() raises error when identity columns are not provided."""
-    linked_service = HttpLinkedService(
-        settings=HttpLinkedServiceSettings(
-            host="https://example.graphql.api/",
-            auth_type=AuthType.NO_AUTH,
-        ),
-        id=uuid.uuid4(),
-        name="test_linked_service",
-        version="1.0.0",
-    )
-
-    dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
-        serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
-        settings=GraphqlDatasetSettings(
-            url="https://example.graphql.api/graphql",
-            delete=GraphqlDeleteSettings(
-                mutation="mutation DeletePost($id: ID!) { deletePost(id: $id) }",
-                identity_columns=[],
-            ),
-        ),
-        linked_service=linked_service,
-        id=uuid.uuid4(),
-        name="test_dataset",
-        version="1.0.0",
-    )
-
-    mock_connection = MagicMock()
-    dataset.input = pd.DataFrame({"id": [1]})
-
-    with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
-        mock_prop.return_value = mock_connection
-        with pytest.raises(DeleteError, match="Identity columns must be provided"):
-            dataset.delete()
-
-
 def test_delete_identity_column_not_in_input_raises_error():
     """Test that delete() raises error when identity column not in input."""
     linked_service = HttpLinkedService(
@@ -283,7 +246,7 @@ def test_delete_identity_column_not_in_input_raises_error():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -320,7 +283,7 @@ def test_delete_single_row_identity_variables():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -365,7 +328,7 @@ def test_delete_with_operation_name():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -410,7 +373,7 @@ def test_delete_graphql_error_raises_delete_error():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -451,7 +414,7 @@ def test_delete_exception_wrapped_in_delete_error():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -490,7 +453,7 @@ def test_delete_no_data_in_response_uses_input():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -535,7 +498,7 @@ def test_delete_with_additional_variables():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -567,3 +530,39 @@ def test_delete_with_additional_variables():
     variables = call_kwargs["json"]["variables"]
     assert variables["id"] == 1
     assert variables["force"] is True
+
+
+def test_delete_no_deserializer_raises_error():
+    """Test that delete() raises DeleteError if deserializer is not configured."""
+    linked_service = HttpLinkedService(
+        settings=HttpLinkedServiceSettings(
+            host="https://example.graphql.api/",
+            auth_type=AuthType.NO_AUTH,
+        ),
+        id=uuid.uuid4(),
+        name="test_linked_service",
+        version="1.0.0",
+    )
+
+    dataset = GraphqlDataset(
+        deserializer=None,
+        settings=GraphqlDatasetSettings(
+            url="https://example.graphql.api/graphql",
+            delete=GraphqlDeleteSettings(
+                mutation="mutation DeletePost($id: ID!) { deletePost(id: $id) }",
+                identity_columns=["id"],
+            ),
+        ),
+        linked_service=linked_service,
+        id=uuid.uuid4(),
+        name="test_dataset",
+        version="1.0.0",
+    )
+
+    mock_connection = MagicMock()
+    dataset.input = pd.DataFrame({"id": [1]})
+
+    with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
+        mock_prop.return_value = mock_connection
+        with pytest.raises(DeleteError, match="Deserializer is not configured"):
+            dataset.delete()

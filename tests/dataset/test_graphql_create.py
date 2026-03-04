@@ -24,7 +24,6 @@ from ds_resource_plugin_py_lib.common.resource.dataset.errors import CreateError
 from ds_resource_plugin_py_lib.common.resource.linked_service.errors import (
     ConnectionError,
 )
-from ds_resource_plugin_py_lib.common.serde.deserialize import PandasDeserializer
 from ds_resource_plugin_py_lib.common.serde.serialize import PandasSerializer
 
 from ds_protocol_graphql_py_lib.dataset.graphql import (
@@ -32,6 +31,7 @@ from ds_protocol_graphql_py_lib.dataset.graphql import (
     GraphqlDataset,
     GraphqlDatasetSettings,
 )
+from ds_protocol_graphql_py_lib.serde.deserializer import GraphqlDeserializer
 
 
 def test_create_returns_none():
@@ -47,7 +47,7 @@ def test_create_returns_none():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -88,7 +88,7 @@ def test_create_populates_output():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -139,7 +139,7 @@ def test_create_empty_input_is_noop():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -179,7 +179,7 @@ def test_create_no_connection_raises_error():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -213,7 +213,7 @@ def test_create_missing_settings_raises_error():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -247,7 +247,7 @@ def test_create_with_operation_name():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -292,7 +292,7 @@ def test_create_single_row_sends_single_object():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -338,7 +338,7 @@ def test_create_multiple_rows_sends_array():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -384,7 +384,7 @@ def test_create_exception_wrapped_in_create_error():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -423,7 +423,7 @@ def test_create_empty_response_data_uses_input():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -466,7 +466,7 @@ def test_create_graphql_error_raises_create_error():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -510,7 +510,7 @@ def test_create_missing_mutation_raises_error():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -547,7 +547,7 @@ def test_create_missing_input_field_raises_error():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -584,7 +584,7 @@ def test_create_unwraps_nested_mutation_response():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -629,7 +629,7 @@ def test_create_response_without_data_field_uses_input():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -673,7 +673,7 @@ def test_validate_create_settings_no_connection_raises_error():
     )
 
     dataset = GraphqlDataset(
-        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
         serializer=PandasSerializer(format=DatasetStorageFormatType.JSON),
         settings=GraphqlDatasetSettings(
             url="https://example.graphql.api/graphql",
@@ -694,4 +694,40 @@ def test_validate_create_settings_no_connection_raises_error():
     with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
         mock_prop.return_value = mock_connection
         with pytest.raises(ConnectionError):
+            dataset.create()
+
+
+def test_create_no_deserializer_raises_error():
+    """Test that create() raises CreateError if deserializer is not configured."""
+    linked_service = HttpLinkedService(
+        settings=HttpLinkedServiceSettings(
+            host="https://example.graphql.api/",
+            auth_type=AuthType.NO_AUTH,
+        ),
+        id=uuid.uuid4(),
+        name="test_linked_service",
+        version="1.0.0",
+    )
+
+    dataset = GraphqlDataset(
+        deserializer=None,
+        settings=GraphqlDatasetSettings(
+            url="https://example.graphql.api/graphql",
+            create=GraphqlCreateSettings(
+                mutation="mutation CreatePost($input: CreatePostInput!) { createPost(input: $input) { id } }",
+                input_field="input",
+            ),
+        ),
+        linked_service=linked_service,
+        id=uuid.uuid4(),
+        name="test_dataset",
+        version="1.0.0",
+    )
+
+    mock_connection = MagicMock()
+    dataset.input = pd.DataFrame({"title": ["Test"]})
+
+    with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
+        mock_prop.return_value = mock_connection
+        with pytest.raises(CreateError, match="Deserializer is not configured"):
             dataset.create()
