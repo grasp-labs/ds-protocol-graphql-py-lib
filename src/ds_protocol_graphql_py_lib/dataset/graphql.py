@@ -214,7 +214,7 @@ class GraphqlDataset(
 
             if "errors" in response_data:
                 raise ReadError(
-                    message="GraphQL query failed",
+                    message="GraphQL query failed: " + response_data["errors"][0].get("message", ""),
                     details={"errors": response_data.get("errors")},
                 )
 
