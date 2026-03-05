@@ -64,8 +64,14 @@ class GraphqlReadSettings(Serializable):
     """Settings specific to reading data from GraphQL API."""
 
     query: str
+    """ The GraphQL query string to execute for reading data.
+    This should be a valid GraphQL query that the endpoint can execute to return the desired data.
+    For example: "{ users { id name email } }"
+    """
     variables: dict[str, Any] | None = None
+    """ Optional variables to include with the GraphQL query."""
     operation_name: str | None = None
+    """ Optional operation name for the GraphQL query, used when the query contains multiple operations."""
 
 
 @dataclass(kw_only=True)
@@ -73,9 +79,13 @@ class GraphqlDeleteSettings(Serializable):
     """Settings specific to deleting data from GraphQL API."""
 
     mutation: str
+    """ The GraphQL mutation string to execute for deleting data."""
     identity_columns: list[str]
+    """ The list of column names in the input DataFrame that uniquely identify the rows to delete."""
     variables: dict[str, Any] | None = None
+    """ Optional variables to include with the GraphQL mutation."""
     operation_name: str | None = None
+    """ Optional operation name for the GraphQL mutation, used when the mutation contains multiple operations."""
 
 
 @dataclass(kw_only=True)
@@ -83,18 +93,31 @@ class GraphqlCreateSettings(Serializable):
     """Settings specific to creating data in GraphQL API."""
 
     mutation: str
+    """ The GraphQL mutation string to execute for creating data.
+    This should be a valid GraphQL mutation that the endpoint can execute to create new records based on the input data.
+    For example: "mutation CreateUser($input: CreateUserInput!) { createUser(input: $input) { id name email } }
+    """
     input_field: str  # The field name for input variables (e.g., "input")
+    """ The name of the variable in the GraphQL mutation that will receive the input data."""
     operation_name: str | None = None
+    """ Optional operation name for the GraphQL mutation, used when the mutation contains multiple operations."""
 
 
 @dataclass(kw_only=True)
 class GraphqlDatasetSettings(DatasetSettings):
     url: str
+    """The URL of the GraphQL endpoint to connect to. This is the base URL where the GraphQL API is hosted."""
     primary_keys: list[str] | None = None
+    """Optional list of column names that serve as primary keys for the dataset.
+    This can be used for operations that require unique identification of rows."""
     headers: dict[str, str] | None = None
+    """Optional HTTP headers to include in requests to the GraphQL endpoint, such as authentication tokens or content type."""
     read: GraphqlReadSettings | None = None
+    """Settings for read operations."""
     delete: GraphqlDeleteSettings | None = None
+    """Settings for delete operations."""
     create: GraphqlCreateSettings | None = None
+    """Settings for create operations."""
 
 
 GraphqlDatasetSettingsType = TypeVar(
@@ -120,9 +143,6 @@ class GraphqlDataset(
     settings: GraphqlDatasetSettingsType
     linked_service: HttpLinkedServiceType
 
-    serializer: PandasSerializer | None = field(
-        default_factory=lambda: PandasSerializer(format=DatasetStorageFormatType.JSON),
-    )
     deserializer: GraphqlDeserializer | None = field(
         default_factory=lambda: GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
     )
@@ -138,6 +158,9 @@ class GraphqlDataset(
 
         GraphQL provider does not yet support checkpoint-based incremental loads.
         All reads are full loads.
+
+        Returns:
+            False, indicating checkpointing is not supported.
         """
         return False
 
@@ -152,6 +175,13 @@ class GraphqlDataset(
         - Direct arrays: {"data": {"users": [...]}}
         - Relay connections: {"data": {"users": {"edges": [{"node": {...}}]}}}
         - Single objects: {"data": {"user": {...}}}
+
+        Returns:
+            None. The result is stored in self.output as a DataFrame.
+
+        Raises:
+            ConnectionError: If the linked service connection is not initialized.
+            ReadError: If read settings are not provided or if the GraphQL query fails.
         """
         if self.linked_service.connection is None:
             raise ConnectionError(message="Connection is not initialized.") from None
@@ -204,6 +234,13 @@ class GraphqlDataset(
 
         Sends all rows in a single atomic GraphQL mutation request.
         Populates self.output with the created rows.
+
+        Returns:
+            None. The result is stored in self.output as a DataFrame.
+
+        Raises:
+            ConnectionError: If the linked service connection is not initialized.
+            CreateError: If create settings are not provided or if the GraphQL mutation fails.
         """
         # Per DATASET_CONTRACT: empty input is a no-op
         if self.input is None or len(self.input) == 0:
@@ -284,6 +321,13 @@ class GraphqlDataset(
 
         Sends all rows in a single atomic GraphQL mutation request.
         Populates self.output with the deleted rows.
+
+        Returns:
+            None. The result is stored in self.output as a DataFrame.
+
+        Raises:
+            ConnectionError: If the linked service connection is not initialized.
+            DeleteError: If delete settings are not provided, if identity columns are missing, or if the GraphQL mutation fails.
         """
         # Per DATASET_CONTRACT: empty input is a no-op
         if self.input is None or len(self.input) == 0:
@@ -390,6 +434,13 @@ class GraphqlDataset(
         Executes a GraphQL introspection query to fetch all available queries
         and their arguments from the schema. Populates self.output with a DataFrame
         containing resource metadata (name, type, description, etc.).
+
+        Returns:
+            None. The result is stored in self.output as a DataFrame.
+
+        Raises:
+            ConnectionError: If the linked service connection is not initialized.
+            ListError: If the GraphQL introspection query fails.
         """
         if self.linked_service.connection is None:
             raise ConnectionError(message="Connection is not initialized.") from None
@@ -460,10 +511,24 @@ class GraphqlDataset(
             ) from e
 
     def close(self) -> None:
+        """
+        Just to satisfy the contract - GraphQL dataset does not maintain persistent connections that require cleanup.
+
+        Returns:
+            None
+        """
         pass
 
     def _validate_create_settings(self) -> None:
-        """Validate create settings are properly configured."""
+        """
+        Validate create settings are properly configured.
+
+        Returns:
+            None: if settings are valid.
+
+        Raises:
+            CreateError: If any required create settings are missing or invalid.
+        """
         if self.linked_service.connection is None:
             raise ConnectionError(message="Connection is not initialized.") from None
         if not self.settings.create:

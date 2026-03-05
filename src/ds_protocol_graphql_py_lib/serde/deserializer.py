@@ -50,6 +50,12 @@ class GraphqlDeserializer(PandasDeserializer):
         Parse GraphQL data structure into DataFrame.
 
         Handles nested structures and various GraphQL response patterns.
+
+        Args:
+            data: The data portion of the GraphQL response
+
+        Returns:
+            DataFrame with the extracted data
         """
         if data is None:
             return pd.DataFrame()
