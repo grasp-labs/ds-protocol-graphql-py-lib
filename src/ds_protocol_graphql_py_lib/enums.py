@@ -6,7 +6,7 @@ Constants for GRAPHQL protocol.
 
 Example:
     >>> ResourceType.DATASET
-    'DS.RESOURCE.DATASET.GRAPHQL'
+    'ds.resource.dataset.graphql'
 """
 
 from enum import StrEnum
@@ -17,4 +17,4 @@ class ResourceType(StrEnum):
     Constants for GRAPHQL protocol.
     """
 
-    DATASET = "DS.RESOURCE.DATASET.GRAPHQL"
+    DATASET = "ds.resource.dataset.graphql"

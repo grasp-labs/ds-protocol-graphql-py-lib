@@ -51,7 +51,7 @@ def test_type_property_returns_resource_type():
     )
 
     assert dataset.type == ResourceType.DATASET
-    assert dataset.type == "DS.RESOURCE.DATASET.GRAPHQL"
+    assert dataset.type == "ds.resource.dataset.graphql"
 
 
 def test_supports_checkpoint_returns_false():
