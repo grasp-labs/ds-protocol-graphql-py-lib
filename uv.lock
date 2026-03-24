@@ -533,8 +533,8 @@ requires-dist = [
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7.0" },
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "ds-common-serde-py-lib", specifier = ">=0.1.0b1,<1.0.0" },
-    { name = "ds-protocol-http-py-lib", specifier = ">=0.1.0b2,<1.0.0" },
-    { name = "ds-resource-plugin-py-lib", specifier = ">=0.1.0rc1,<1.0.0" },
+    { name = "ds-protocol-http-py-lib", specifier = ">=0.1.0b5,<1.0.0" },
+    { name = "ds-resource-plugin-py-lib", specifier = ">=0.1.0rc3,<1.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.7.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.6.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
@@ -557,7 +557,7 @@ provides-extras = ["dev", "test", "docs"]
 
 [[package]]
 name = "ds-protocol-http-py-lib"
-version = "0.1.0b2"
+version = "0.1.0b5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ds-common-logger-py-lib" },
@@ -565,14 +565,14 @@ dependencies = [
     { name = "pandas" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/51/fa/5d6fbc48a18a9f22b31079159ebcf3abd197ad73599a09c4461fb7ee3809/ds_protocol_http_py_lib-0.1.0b2.tar.gz", hash = "sha256:e5085f04b2cf29718766cc871289a2cbb74c957b569e5b13c734921bb4df70ef", size = 21218, upload-time = "2026-02-18T14:18:31.644Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/df/54/ce37673d419fc5824bdb963f5bb16c1946b5c148c92d674834e34c894b48/ds_protocol_http_py_lib-0.1.0b5.tar.gz", hash = "sha256:91ce09a5575d240ae0265f6440728e5cfc9f00f50951cad7bb5294d5eb3f38c4", size = 22064, upload-time = "2026-03-24T14:08:45.235Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/79/74/cdb3e89570af861ccb55c952f42d7a11e69abe823ebdadd2cb2ecc85d8f8/ds_protocol_http_py_lib-0.1.0b2-py3-none-any.whl", hash = "sha256:2035a9e9aa2c508e3d8dbda20eee317f185b36686efead8e515e63815e322bbd", size = 23173, upload-time = "2026-02-18T14:18:30.264Z" },
+    { url = "https://files.pythonhosted.org/packages/70/da/7f780fd09cc30fb262f3e877e5623c1008ee56cae1e01da494777cdb0150/ds_protocol_http_py_lib-0.1.0b5-py3-none-any.whl", hash = "sha256:3f14e246820e5a527547cc5324e1b0459d277d1bd1508ed3fed2e04008f83577", size = 23866, upload-time = "2026-03-24T14:08:43.883Z" },
 ]
 
 [[package]]
 name = "ds-resource-plugin-py-lib"
-version = "0.1.0rc1"
+version = "0.1.0rc3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "awswrangler" },
@@ -582,9 +582,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b4/cb/6baf2b0d49f8764158a79b64eef23a7f081511bca66f5e02c8d9132d1890/ds_resource_plugin_py_lib-0.1.0rc1.tar.gz", hash = "sha256:ae27af3a31e4d8cc133fa25b8d0eb3bffaf768ec526f61100608098fb5cd87ba", size = 22463, upload-time = "2026-02-24T11:03:18.682Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/90/36/150908f8a9afdbf3de50169ef64365081528cd4b6a3d5d6f28826f00fbfd/ds_resource_plugin_py_lib-0.1.0rc3.tar.gz", hash = "sha256:02d77a11c7d8836b72b51941de86624900bb9639f82ad1882a7e1e32a07e96e2", size = 22981, upload-time = "2026-03-18T16:15:14.992Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6b/04/dac0995c3e1ce1e58e7cb09c62e1a837877e9b1a33d9d3e5e3b2f7784de7/ds_resource_plugin_py_lib-0.1.0rc1-py3-none-any.whl", hash = "sha256:56e08d431393f5e4e225f6517c72af83b5776a8ac49c72d10f3721afdf2351cb", size = 31141, upload-time = "2026-02-24T11:03:17.7Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/9e/67f4158b6107662abd2c21bb66fed1ca49725509b4ce6f2b6f50f50a107f/ds_resource_plugin_py_lib-0.1.0rc3-py3-none-any.whl", hash = "sha256:0bc6aa86a3bdae6a6b57174d82dde4a226601bed66894326a8735f63cdeacab8", size = 32269, upload-time = "2026-03-18T16:15:14.002Z" },
 ]
 
 [[package]]
