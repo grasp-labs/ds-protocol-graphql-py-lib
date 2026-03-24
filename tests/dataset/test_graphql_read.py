@@ -465,3 +465,39 @@ def test_read_json_parse_error_wrapped():
         mock_prop.return_value = mock_connection
         with pytest.raises(ReadError, match="Failed to read from GraphQL"):
             dataset.read()
+
+
+def test_read_graphql_errors_response_raises_read_error_with_details() -> None:
+    """GraphQL errors from API response should be raised as ReadError without wrapping."""
+    linked_service = HttpLinkedService(
+        settings=HttpLinkedServiceSettings(
+            host="https://example.graphql.api/",
+            auth_type=AuthType.NO_AUTH,
+        ),
+        id=uuid.uuid4(),
+        name="test_linked_service",
+        version="1.0.0",
+    )
+
+    dataset = GraphqlDataset(
+        settings=GraphqlDatasetSettings(
+            url="https://example.graphql.api/graphql",
+            read=GraphqlReadSettings(query="{ countries { name } }"),
+        ),
+        linked_service=linked_service,
+        id=uuid.uuid4(),
+        name="test_dataset",
+        version="1.0.0",
+    )
+
+    mock_connection = MagicMock()
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"errors": [{"message": "boom"}]}
+    mock_connection.session.post.return_value = mock_response
+
+    with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
+        mock_prop.return_value = mock_connection
+        with pytest.raises(ReadError, match="GraphQL query failed") as exc_info:
+            dataset.read()
+
+    assert exc_info.value.details == {"errors": [{"message": "boom"}]}
