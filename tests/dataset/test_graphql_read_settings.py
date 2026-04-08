@@ -2,29 +2,46 @@
 **File:** ``test_graphql_read_settings.py``
 **Region:** ``tests/dataset``
 
-Test script to verify GraphQL read functionality works correctly.
+Tests to verify GraphQL read functionality works correctly.
 
 Covers:
     GraphqlReadSettings dataclass instantiation and field validation
     including query, variables, and operation_name parameters.
 """
 
-import sys
-
-sys.path.insert(0, "/")
-
 from ds_protocol_graphql_py_lib.dataset.graphql import GraphqlReadSettings
 
-# Test that GraphqlReadSettings exists and has the correct fields
-print("GraphqlReadSettings class exists:", GraphqlReadSettings)
-print("Fields:", GraphqlReadSettings.__annotations__)
 
-# Create an instance
-settings = GraphqlReadSettings(query="{ test }", variables={"key": "value"}, operation_name="TestOp")
+def test_graphql_read_settings_has_expected_fields():
+    """
+    Ensure that the GraphqlReadSettings dataclass exists and exposes
+    the expected annotated fields.
+    """
+    assert GraphqlReadSettings is not None
+    annotations = getattr(GraphqlReadSettings, "__annotations__", {})
 
-print("\nCreated instance successfully:")
-print(f"  query: {settings.query}")
-print(f"  variables: {settings.variables}")
-print(f"  operation_name: {settings.operation_name}")
+    # Required fields that should be present on the dataclass
+    expected_fields = {"query", "variables", "operation_name"}
+    missing_fields = expected_fields.difference(annotations.keys())
 
-print("\n✅ All tests passed!")
+    assert not missing_fields, f"Missing expected fields: {missing_fields}"
+
+
+def test_graphql_read_settings_instance_attributes():
+    """
+    Verify that an instance of GraphqlReadSettings can be constructed
+    with the expected parameters and that its attributes are set correctly.
+    """
+    query = "{ test }"
+    variables = {"key": "value"}
+    operation_name = "TestOp"
+
+    settings = GraphqlReadSettings(
+        query=query,
+        variables=variables,
+        operation_name=operation_name,
+    )
+
+    assert settings.query == query
+    assert settings.variables == variables
+    assert settings.operation_name == operation_name

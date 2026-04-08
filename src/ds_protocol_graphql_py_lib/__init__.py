@@ -10,7 +10,7 @@ Example
 -------
 .. code-block:: python
 
-    from ds_provider_graphql_py_lib import __version__
+    from ds_protocol_graphql_py_lib import __version__
 
     print(f"Package version: {__version__}")
 """

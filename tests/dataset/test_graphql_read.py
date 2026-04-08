@@ -501,3 +501,43 @@ def test_read_graphql_errors_response_raises_read_error_with_details() -> None:
             dataset.read()
 
     assert exc_info.value.details == {"errors": [{"message": "boom"}]}
+
+
+def test_check_for_graphql_read_error_no_errors_does_not_raise() -> None:
+    """No `errors` key should pass validation."""
+    GraphqlDataset._check_for_graphql_read_error({"data": {"countries": []}})
+
+
+@pytest.mark.parametrize(
+    ("response_data", "expected_message"),
+    [
+        (
+            {"errors": [{"message": "boom"}]},
+            "GraphQL query failed: boom",
+        ),
+        (
+            {"errors": {"message": "boom"}},
+            "GraphQL query failed: boom",
+        ),
+        (
+            {"errors": []},
+            "GraphQL query failed",
+        ),
+        (
+            {"errors": [{"code": "E123"}]},
+            "GraphQL query failed",
+        ),
+        (
+            {"errors": {"message": ""}},
+            "GraphQL query failed",
+        ),
+    ],
+)
+def test_check_for_graphql_read_error_raises_read_error_with_expected_message(
+    response_data: dict[str, object], expected_message: str
+) -> None:
+    """Validation should raise ReadError and preserve original errors payload in details."""
+    with pytest.raises(ReadError, match=expected_message) as exc_info:
+        GraphqlDataset._check_for_graphql_read_error(response_data)
+
+    assert exc_info.value.details == {"errors": response_data["errors"]}

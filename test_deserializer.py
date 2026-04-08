@@ -30,15 +30,7 @@ print()
 
 # Test 3: Single object
 print("Test 3: Single object")
-response3 = {
-    "data": {
-        "film": {
-            "title": "A New Hope",
-            "producers": ["Gary Kurtz", "Rick McCallum"],
-            "releaseDate": "1977-05-25"
-        }
-    }
-}
+response3 = {"data": {"film": {"title": "A New Hope", "producers": ["Gary Kurtz", "Rick McCallum"], "releaseDate": "1977-05-25"}}}
 df3 = deserializer.deserialize(response3)
 print(df3)
 print()

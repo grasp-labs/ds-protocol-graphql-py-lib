@@ -95,7 +95,7 @@ class GraphqlCreateSettings(Serializable):
     mutation: str
     """ The GraphQL mutation string to execute for creating data.
     This should be a valid GraphQL mutation that the endpoint can execute to create new records based on the input data.
-    For example: "mutation CreateUser($input: CreateUserInput!) { createUser(input: $input) { id name email } }
+    For example: "mutation CreateUser($input: CreateUserInput!) { createUser(input: $input) { id name email } }"
     """
     input_field: str  # The field name for input variables (e.g., "input")
     """ The name of the variable in the GraphQL mutation that will receive the input data."""
@@ -212,12 +212,7 @@ class GraphqlDataset(
             result.raise_for_status()
             response_data = result.json()
 
-            if "errors" in response_data:
-                raise ReadError(
-                    message="GraphQL query failed: " + response_data["errors"][0].get("message", ""),
-                    details={"errors": response_data.get("errors")},
-                )
-
+            self._check_for_graphql_read_error(response_data)
             self.output = self.deserializer.deserialize_graphql(response_data)
 
         except ReadError:
@@ -227,6 +222,30 @@ class GraphqlDataset(
                 message=f"Failed to read from GraphQL: {e!s}",
                 details={"url": self.settings.url},
             ) from e
+
+    @staticmethod
+    def _check_for_graphql_read_error(response_data: dict[str, Any]) -> None:
+        if "errors" in response_data:
+            base_message = "GraphQL query failed"
+
+            errors = response_data["errors"]
+
+            # Safely extract a human-readable message from the first error, if available.
+            if isinstance(errors, list) and errors:
+                first_error = errors[0]
+                if isinstance(first_error, dict):
+                    error_message = first_error.get("message")
+                    if isinstance(error_message, str) and error_message:
+                        base_message = f"{base_message}: {error_message}"
+            elif isinstance(errors, dict):
+                error_message = errors.get("message")
+                if isinstance(error_message, str) and error_message:
+                    base_message = f"{base_message}: {error_message}"
+
+            raise ReadError(
+                message=base_message,
+                details={"errors": errors},
+            )
 
     def create(self) -> None:
         """

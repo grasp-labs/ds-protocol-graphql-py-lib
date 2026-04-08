@@ -3,8 +3,6 @@ import uuid
 from ds_protocol_http_py_lib import HttpLinkedService, HttpLinkedServiceSettings
 from ds_protocol_http_py_lib.enums import AuthType
 from ds_resource_plugin_py_lib.common.resource.dataset import DatasetStorageFormatType
-from ds_resource_plugin_py_lib.common.serde.deserialize import PandasDeserializer
-from ds_resource_plugin_py_lib.common.serde.serialize import PandasSerializer
 
 from ds_protocol_graphql_py_lib import GraphqlDeserializer
 from ds_protocol_graphql_py_lib.dataset.graphql import (
@@ -12,6 +10,7 @@ from ds_protocol_graphql_py_lib.dataset.graphql import (
     GraphqlDatasetSettings,
     GraphqlReadSettings,
 )
+
 QUERY = """
 query GetLaunches($limit: Int!, $mission: String!) {
   launchesPast(limit: $limit, find: { mission_name: $mission }) {
@@ -64,13 +63,7 @@ dataset = GraphqlDataset(
     deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
     settings=GraphqlDatasetSettings(
         url="https://spacex-production.up.railway.app/",
-        read=GraphqlReadSettings(
-            query=QUERY,
-            variables={
-              "limit": 3,
-              "mission": "Starlink"
-            }
-        ),
+        read=GraphqlReadSettings(query=QUERY, variables={"limit": 3, "mission": "Starlink"}),
     ),
     linked_service=linked_service,
     id=uuid.uuid4(),
