@@ -1,8 +1,8 @@
 """
 **File:** ``__init__.py``
-**Region:** ``tests``
+**Region:** ``tests/dataset``
 
-Test suite package for ds-protocol-graphql-py-lib.
+Test suite for GraphQL dataset module.
 
 Covers:
     All unit tests for GraphQL dataset operations including read, create,
