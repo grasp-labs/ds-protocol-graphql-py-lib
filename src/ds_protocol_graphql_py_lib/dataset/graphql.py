@@ -54,7 +54,9 @@ from ds_resource_plugin_py_lib.common.resource.linked_service.errors import (
 from ds_resource_plugin_py_lib.common.serde.serialize import PandasSerializer
 
 from ..enums import ResourceType
-from ..serde.deserializer import GraphqlDeserializer
+from ..serde.deserializer import DEFAULT_RECORDS_PATH, GraphqlDeserializer
+from .incremental import IncrementalSettings
+from .pagination import Paginate, PaginationSettings
 
 logger = Logger.get_logger(__name__, package=True)
 
@@ -72,6 +74,18 @@ class GraphqlReadSettings(Serializable):
     """ Optional variables to include with the GraphQL query."""
     operation_name: str | None = None
     """ Optional operation name for the GraphQL query, used when the query contains multiple operations."""
+    records_path: str | None = None
+    """ Optional dotted path to the record list in the response (e.g. "data.useCompany.associate.items").
+    Deserialization starts at this path; lists become rows (Relay edges unwrapped to ``node``).
+    When unset: ``pagination.items_path`` when pagination is configured, else ``"data"``."""
+    pagination: PaginationSettings | None = None
+    """ Optional pagination settings. When unset, read() issues a single request."""
+    incremental: IncrementalSettings | None = None
+    """
+    Optional incremental watermark rules, consulted by Paginate.
+
+    Ignored when ``pagination`` is unset (single-request reads do not run Paginate).
+    """
 
 
 @dataclass(kw_only=True)
@@ -156,19 +170,21 @@ class GraphqlDataset(
         """
         Indicate whether this provider supports incremental loads via checkpointing.
 
-        GraphQL provider does not yet support checkpoint-based incremental loads.
-        All reads are full loads.
+        True when pagination is configured: mid-run resume state is kept in
+        ``checkpoint["pagination"]`` until a read completes.
 
         Returns:
-            False, indicating checkpointing is not supported.
+            True if ``settings.read.pagination`` is set, else False.
         """
-        return False
+        return self.settings.read is not None and self.settings.read.pagination is not None
 
     def read(self) -> None:
         """
         Read Graphql dataset.
 
-        Sends a GraphQL query to the endpoint with the query, variables, and operation name
+        When ``settings.read.pagination`` is set, all pages are fetched via
+        :class:`Paginate` inside this single call (see README2.md). Otherwise
+        sends a GraphQL query to the endpoint with the query, variables, and operation name
         specified in settings.read. Populates self.output with the result as a DataFrame.
 
         Handles various GraphQL response patterns via GraphqlDeserializer:
@@ -192,6 +208,10 @@ class GraphqlDataset(
         if not self.deserializer:
             raise ReadError("Deserializer is not configured for GraphQL dataset")
 
+        if self.settings.read.pagination is not None:
+            Paginate.from_dataset(self).run(self)
+            return
+
         try:
             payload: dict[str, Any] = {
                 "query": self.settings.read.query,
@@ -213,7 +233,10 @@ class GraphqlDataset(
             response_data = result.json()
 
             self._check_for_graphql_read_error(response_data)
-            self.output = self.deserializer.deserialize_graphql(response_data)
+            self.output = self.deserializer.deserialize_graphql(
+                response_data,
+                records_path=self.settings.read.records_path or DEFAULT_RECORDS_PATH,
+            )
 
         except ReadError:
             raise

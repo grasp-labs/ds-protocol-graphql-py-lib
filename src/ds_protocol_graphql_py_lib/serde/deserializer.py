@@ -8,7 +8,9 @@ Example:
     >>> from ds_protocol_graphql_py_lib import GraphqlDeserializer
     >>> deserializer = GraphqlDeserializer(format=DatasetStorageFormatType.JSON)
     >>> response = {"data": {"users": [{"id": "1", "name": "John"}]}}
-    >>> df = deserializer.deserialize(response)
+    >>> df = deserializer.deserialize_graphql(response)
+    >>> page = {"data": {"x": {"items": [{"id": 1}], "pageInfo": {"hasNextPage": False}}}}
+    >>> df = deserializer.deserialize_graphql(page, records_path="data.x.items")
 """
 
 from typing import Any
@@ -16,24 +18,39 @@ from typing import Any
 import pandas as pd  # type: ignore[import-untyped]
 from ds_resource_plugin_py_lib.common.serde.deserialize import PandasDeserializer
 
+from ..utils.json_utils import get_path
+
+# Where deserialization starts when no ``records_path`` is given: the GraphQL ``data`` object.
+DEFAULT_RECORDS_PATH = "data"
+
+_EDGE_KEYS = frozenset({"node", "cursor"})
+
 
 class GraphqlDeserializer(PandasDeserializer):
     """
     Deserializer for GraphQL API responses.
 
-    Handles various GraphQL response patterns:
+    Starts at ``records_path`` (default ``"data"``) and turns the value there
+    into rows:
+    - Lists: one row per element; Relay edges (``{"cursor", "node"}``) are unwrapped to ``node``
     - Direct arrays: {"data": {"users": [...]}}
     - Relay connections: {"data": {"users": {"edges": [{"node": {...}}]}}}
     - Single objects: {"data": {"user": {...}}}
     - Introspection queries: {"data": {"__type": {"fields": [...]}}}
     """
 
-    def deserialize_graphql(self, data: Any) -> pd.DataFrame:
+    def deserialize_graphql(self, data: Any, records_path: str = DEFAULT_RECORDS_PATH) -> pd.DataFrame:
         """
         Deserialize GraphQL response to pandas DataFrame.
 
         Args:
-            data: GraphQL response dict or raw data
+            data: GraphQL response dict.
+            records_path: Dotted path on the full response where deserialization
+                starts (default ``"data"``), e.g. ``"data.useCompany.associate.items"``.
+                The value there is parsed with the same rules as the default: lists
+                become rows (Relay edges unwrapped to ``node``), connections are
+                unwrapped, single objects become one row. Missing or null yields an
+                empty DataFrame.
 
         Returns:
             DataFrame containing the extracted data
@@ -41,9 +58,26 @@ class GraphqlDeserializer(PandasDeserializer):
         if not isinstance(data, dict):
             return pd.DataFrame()
 
-        extracted_data = data.get("data", data)
+        extracted_data = get_path(data, records_path)
 
         return self._parse_graphql_data(extracted_data)
+
+    @staticmethod
+    def _unwrap_edge(record: Any) -> Any:
+        """
+        Relay edge → its ``node``; anything else passes through unchanged.
+
+        Only dicts shaped like an edge are unwrapped: a ``node`` dict and no keys
+        other than ``node`` / ``cursor``. A normal row that happens to have a
+        ``node`` field is left alone.
+        """
+        if isinstance(record, dict) and isinstance(record.get("node"), dict) and record.keys() <= _EDGE_KEYS:
+            return record["node"]
+        return record
+
+    def _frame_from_list(self, records: list[Any]) -> pd.DataFrame:
+        """One row per element, with Relay edges unwrapped to ``node``."""
+        return pd.DataFrame([self._unwrap_edge(record) for record in records])
 
     def _parse_graphql_data(self, data: Any) -> pd.DataFrame:
         """
@@ -61,7 +95,7 @@ class GraphqlDeserializer(PandasDeserializer):
             return pd.DataFrame()
 
         if isinstance(data, list):
-            return pd.DataFrame(data)
+            return self._frame_from_list(data)
 
         if not isinstance(data, dict):
             return pd.DataFrame([data])
@@ -71,7 +105,7 @@ class GraphqlDeserializer(PandasDeserializer):
 
             # Nested value is a list - use it
             if isinstance(nested_value, list):
-                return pd.DataFrame(nested_value)
+                return self._frame_from_list(nested_value)
 
             # Nested value has edges (Relay pagination)
             if isinstance(nested_value, dict) and "edges" in nested_value:
