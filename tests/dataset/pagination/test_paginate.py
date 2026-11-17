@@ -345,9 +345,25 @@ def test_drain_raises_on_http_error_status() -> None:
             paginate.drain(dataset, paginate._snapshot(dataset))
 
 
-def test_drain_items_path_missing_raises() -> None:
-    with pytest.raises(ValueError, match="missing or null"):
+def test_drain_items_path_parent_null_raises() -> None:
+    with pytest.raises(ValueError, match="missing in response"):
         drain(visma_dataset(), [{"data": {"useCompany": None}}])
+
+
+def test_drain_items_key_missing_raises() -> None:
+    body = page(has_next=False, end_cursor=None)
+    del body["data"]["useCompany"]["associate"]["items"]
+    with pytest.raises(ValueError, match="missing in response"):
+        drain(visma_dataset(), [body])
+
+
+def test_drain_null_items_is_an_empty_page() -> None:
+    """Visma returns ``items: null`` (not ``[]``) when nothing matches."""
+    body = page(has_next=False, end_cursor=None)
+    body["data"]["useCompany"]["associate"]["items"] = None
+    frames, session = drain(visma_dataset(), [body])
+    assert session.post.call_count == 1
+    assert all(frame.empty for frame in frames)
 
 
 def test_drain_items_path_not_a_list_raises() -> None:
@@ -578,6 +594,17 @@ def test_run_without_new_rows_keeps_watermark() -> None:
     dataset = visma_dataset(incremental=INCREMENTAL)
     dataset.checkpoint["incremental"] = {"watermark": "2026-01-01"}
     run(dataset, [changed_page(has_next=False, end_cursor=None)])
+    assert dataset.checkpoint == {"incremental": {"watermark": "2026-01-01"}}
+
+
+def test_run_null_items_keeps_watermark() -> None:
+    """Nothing after the watermark: Visma sends ``items: null``; the run succeeds and keeps the watermark."""
+    dataset = visma_dataset(incremental=INCREMENTAL)
+    dataset.checkpoint["incremental"] = {"watermark": "2026-01-01"}
+    body = changed_page(has_next=False, end_cursor=None)
+    body["data"]["useCompany"]["associate"]["items"] = None
+    run(dataset, [body])
+    assert dataset.output.empty
     assert dataset.checkpoint == {"incremental": {"watermark": "2026-01-01"}}
 
 

@@ -42,10 +42,19 @@ def test_get_list_root_list() -> None:
     assert get_list([1, 2], "$") == [1, 2]
 
 
-@pytest.mark.parametrize("path", ["data.x.missing", "data.x.none"])
-def test_get_list_missing_or_null_raises(path: str) -> None:
-    with pytest.raises(ValueError, match="missing or null"):
+@pytest.mark.parametrize("path", ["data.x.missing", "data.x.none.deeper", "data.x.items.9", "data.x.count.deeper"])
+def test_get_list_missing_raises(path: str) -> None:
+    with pytest.raises(ValueError, match="missing in response"):
         get_list(BODY, path)
+
+
+def test_get_list_null_is_empty_list() -> None:
+    assert get_list(BODY, "data.x.none") == []
+
+
+def test_get_path_null_and_missing_both_none() -> None:
+    assert get_path(BODY, "data.x.none") is None
+    assert get_path(BODY, "data.x.missing") is None
 
 
 def test_get_list_non_list_raises() -> None:
