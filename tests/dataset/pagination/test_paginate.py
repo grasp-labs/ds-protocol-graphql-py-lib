@@ -608,6 +608,24 @@ def test_run_null_items_keeps_watermark() -> None:
     assert dataset.checkpoint == {"incremental": {"watermark": "2026-01-01"}}
 
 
+def test_run_commit_failure_keeps_pagination_checkpoint() -> None:
+    """Non-comparable watermark values: commit raises after a full drain; the resume point is kept."""
+    dataset = visma_dataset(incremental=IncrementalSettings(variable="since", watermark_path="changed"))
+    dataset.checkpoint["incremental"] = {"watermark": "2026-01-01"}
+    bodies = [
+        visma_page([{"associateNo": 1, "changed": "2026-01-05"}], has_next=True, end_cursor="c1"),
+        visma_page([{"associateNo": 2, "changed": 7}], has_next=False, end_cursor=None),
+    ]
+    exc_info, _ = run_expect(ReadError, dataset, bodies)
+    assert exc_info.value.status_code == 400
+    assert "not comparable" in exc_info.value.message
+    assert dataset.output["associateNo"].tolist() == [1, 2]
+    assert dataset.checkpoint == {
+        "incremental": {"watermark": "2026-01-01"},
+        "pagination": {"strategy": "cursor", "cursor": "c1", "page_size": 2, "page_index": 1},
+    }
+
+
 def test_run_failure_does_not_advance_watermark() -> None:
     dataset = visma_dataset(incremental=INCREMENTAL)
     dataset.checkpoint["incremental"] = {"watermark": "2026-01-01"}

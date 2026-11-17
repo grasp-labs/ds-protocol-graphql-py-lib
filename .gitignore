@@ -149,3 +149,7 @@ Thumbs.db
 
 # Template backup
 .template-backup/
+
+# Checkpoints written by examples/10_incremental_xledger.py and 11_incremental_visma_bnxt.py
+.xledger_checkpoint.json
+.visma_bnxt_checkpoint.json
