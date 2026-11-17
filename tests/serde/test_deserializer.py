@@ -11,6 +11,8 @@ Covers:
 
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 from ds_resource_plugin_py_lib.common.resource.dataset import DatasetStorageFormatType
 
@@ -167,6 +169,46 @@ def test_edge_with_other_extra_fields_is_not_unwrapped() -> None:
     edges = [{"cursor": "a", "score": 0.9, "node": {"dbId": 1}}]
     df = deserializer.deserialize_graphql({"data": {"customers": {"edges": edges}}}, records_path="data.customers.edges")
     assert set(df.columns) == {"cursor", "score", "node"}
+
+
+def _edges_frame(edges: list[dict[str, Any]], records_path: str = "data.customers.edges") -> pd.DataFrame:
+    return _deserializer().deserialize_graphql({"data": {"customers": {"edges": edges}}}, records_path=records_path)
+
+
+def test_null_node_edges_are_skipped() -> None:
+    """A null node is no record: no junk row, no cursor/node columns, int dtype kept."""
+    df = _edges_frame([{"cursor": "a", "node": {"dbId": 1}}, {"cursor": "b", "node": None}, {"cursor": "c", "node": {"dbId": 3}}])
+    assert df.to_dict(orient="records") == [{"dbId": 1}, {"dbId": 3}]
+    assert str(df["dbId"].dtype) == "int64"
+
+
+def test_null_node_edge_with_typename_is_skipped() -> None:
+    df = _edges_frame([{"__typename": "CustomerEdge", "cursor": "b", "node": None}, {"cursor": "a", "node": {"dbId": 1}}])
+    assert df.to_dict(orient="records") == [{"dbId": 1}]
+
+
+def test_only_null_node_edges_give_empty_frame() -> None:
+    assert _edges_frame([{"cursor": "a", "node": None}]).empty
+
+
+def test_null_node_edge_with_other_fields_is_kept() -> None:
+    """Not edge-shaped (extra field), so it may be data: left as is."""
+    df = _edges_frame([{"cursor": "a", "score": 0.9, "node": None}])
+    assert df.to_dict(orient="records") == [{"cursor": "a", "score": 0.9, "node": None}]
+
+
+def test_row_with_null_node_field_is_kept() -> None:
+    df = _deserializer().deserialize_graphql({"data": {"things": [{"id": 1, "node": None}, {"id": 2, "node": None}]}})
+    assert df["id"].tolist() == [1, 2]
+
+
+def test_connection_path_skips_null_node_edges() -> None:
+    """Same result when records_path points at the connection (``_extract_relay_nodes``)."""
+    edges = [{"cursor": "a", "node": {"dbId": 1}}, {"cursor": "b", "node": None}]
+    response = {"data": {"customers": {"pageInfo": {"hasNextPage": False}, "edges": edges}}}
+    df = _deserializer().deserialize_graphql(response, records_path="data.customers")
+    assert df.to_dict(orient="records") == [{"dbId": 1}]
+    assert str(df["dbId"].dtype) == "int64"
 
 
 def test_row_with_node_field_is_not_unwrapped() -> None:

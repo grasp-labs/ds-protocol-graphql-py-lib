@@ -77,9 +77,20 @@ class GraphqlDeserializer(PandasDeserializer):
             return record["node"]
         return record
 
+    @staticmethod
+    def _is_null_node_edge(record: Any) -> bool:
+        """
+        True for a Relay edge whose ``node`` is ``null`` (no record, e.g. deleted or hidden).
+
+        Same shape rule as :meth:`_unwrap_edge`: only ``node`` / ``cursor`` /
+        ``__typename`` keys. A normal row with ``"node": None`` and other fields
+        is not an edge and is kept.
+        """
+        return isinstance(record, dict) and "node" in record and record["node"] is None and record.keys() <= _EDGE_KEYS
+
     def _frame_from_list(self, records: list[Any]) -> pd.DataFrame:
-        """One row per element, with Relay edges unwrapped to ``node``."""
-        return pd.DataFrame([self._unwrap_edge(record) for record in records])
+        """One row per element, with Relay edges unwrapped to ``node`` and null-node edges skipped."""
+        return pd.DataFrame([self._unwrap_edge(record) for record in records if not self._is_null_node_edge(record)])
 
     def _parse_graphql_data(self, data: Any) -> pd.DataFrame:
         """
@@ -153,11 +164,12 @@ class GraphqlDeserializer(PandasDeserializer):
             data: Dict containing "edges" key with Relay pagination structure
 
         Returns:
-            DataFrame with nodes extracted from edges
+            DataFrame with nodes extracted from edges; edges with a ``null``
+            node are skipped (no record).
         """
         edges = data.get("edges", [])
         if not isinstance(edges, list):
             return pd.DataFrame()
 
-        nodes = [edge.get("node", edge) for edge in edges if edge]
+        nodes = [node for edge in edges if edge and (node := edge.get("node", edge)) is not None]
         return pd.DataFrame(nodes)
