@@ -23,7 +23,8 @@ from ..utils.json_utils import get_path
 # Where deserialization starts when no ``records_path`` is given: the GraphQL ``data`` object.
 DEFAULT_RECORDS_PATH = "data"
 
-_EDGE_KEYS = frozenset({"node", "cursor"})
+# Keys a Relay edge may have besides ``node``: its ``cursor`` and GraphQL's ``__typename`` meta field.
+_EDGE_KEYS = frozenset({"node", "cursor", "__typename"})
 
 
 class GraphqlDeserializer(PandasDeserializer):
@@ -32,7 +33,7 @@ class GraphqlDeserializer(PandasDeserializer):
 
     Starts at ``records_path`` (default ``"data"``) and turns the value there
     into rows:
-    - Lists: one row per element; Relay edges (``{"cursor", "node"}``) are unwrapped to ``node``
+    - Lists: one row per element; Relay edges (``{"cursor", "node", "__typename"}``) are unwrapped to ``node``
     - Direct arrays: {"data": {"users": [...]}}
     - Relay connections: {"data": {"users": {"edges": [{"node": {...}}]}}}
     - Single objects: {"data": {"user": {...}}}
@@ -68,8 +69,9 @@ class GraphqlDeserializer(PandasDeserializer):
         Relay edge → its ``node``; anything else passes through unchanged.
 
         Only dicts shaped like an edge are unwrapped: a ``node`` dict and no keys
-        other than ``node`` / ``cursor``. A normal row that happens to have a
-        ``node`` field is left alone.
+        other than ``node`` / ``cursor`` / ``__typename`` (clients such as Apollo
+        add ``__typename`` to every selection). A normal row that happens to have
+        a ``node`` field is left alone.
         """
         if isinstance(record, dict) and isinstance(record.get("node"), dict) and record.keys() <= _EDGE_KEYS:
             return record["node"]

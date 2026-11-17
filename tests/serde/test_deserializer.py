@@ -142,8 +142,35 @@ def test_top_level_edges_are_unwrapped() -> None:
     assert df.to_dict(orient="records") == [{"id": 1}, {"id": 2}]
 
 
+def test_edges_with_typename_are_unwrapped() -> None:
+    """``__typename`` on the edge is metadata: selecting it must not change the output schema."""
+    deserializer = _deserializer()
+    edges = [
+        {"__typename": "CustomerEdge", "cursor": "a", "node": {"dbId": 1}},
+        {"__typename": "CustomerEdge", "node": {"dbId": 2}},
+    ]
+    df = deserializer.deserialize_graphql({"data": {"customers": {"edges": edges}}}, records_path="data.customers.edges")
+    assert df.to_dict(orient="records") == [{"dbId": 1}, {"dbId": 2}]
+
+
+def test_node_typename_is_kept_as_a_column() -> None:
+    """``__typename`` selected on the node is record data and stays."""
+    deserializer = _deserializer()
+    edges = [{"__typename": "CustomerEdge", "cursor": "a", "node": {"__typename": "Customer", "dbId": 1}}]
+    df = deserializer.deserialize_graphql({"data": {"customers": {"edges": edges}}}, records_path="data.customers.edges")
+    assert df.to_dict(orient="records") == [{"__typename": "Customer", "dbId": 1}]
+
+
+def test_edge_with_other_extra_fields_is_not_unwrapped() -> None:
+    """Edge fields other than cursor/__typename may be data (e.g. a score), so the edge stays as is."""
+    deserializer = _deserializer()
+    edges = [{"cursor": "a", "score": 0.9, "node": {"dbId": 1}}]
+    df = deserializer.deserialize_graphql({"data": {"customers": {"edges": edges}}}, records_path="data.customers.edges")
+    assert set(df.columns) == {"cursor", "score", "node"}
+
+
 def test_row_with_node_field_is_not_unwrapped() -> None:
-    """Only edge-shaped dicts (node + optional cursor) are unwrapped."""
+    """Only edge-shaped dicts (node + optional cursor / __typename) are unwrapped."""
     deserializer = _deserializer()
     rows = [{"id": 1, "node": {"x": 1}}, {"id": 2, "node": {"x": 2}}]
     df = deserializer.deserialize_graphql({"data": {"things": rows}})
