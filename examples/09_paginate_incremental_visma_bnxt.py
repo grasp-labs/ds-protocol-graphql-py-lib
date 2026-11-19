@@ -34,7 +34,7 @@ Notes:
     - ``associateNo`` only catches *new* rows. To also catch *changed* rows, use
       ``changedDateTime`` as the watermark with a ``_gte`` filter, and expect the
       boundary rows to be read again (dedupe on the key).
-    - Incremental is applied only when ``pagination`` is set.
+    - Incremental requires ``pagination``: ``GraphqlReadSettings`` raises otherwise.
     - On failure the watermark does not move; ``checkpoint["pagination"]``
       lets the next run resume the same incremental run where it stopped, and
       ``checkpoint["incremental"]["pending"]`` keeps the max already read, so

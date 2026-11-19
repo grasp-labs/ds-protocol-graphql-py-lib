@@ -77,9 +77,12 @@ class GraphqlReadSettings(Serializable):
     operation_name: str | None = None
     """ Optional operation name for the GraphQL query, used when the query contains multiple operations."""
     records_path: str | None = None
-    """ Optional dotted path to the record list in the response (e.g. "data.useCompany.associate.items").
-    Deserialization starts at this path; lists become rows (Relay edges unwrapped to ``node``).
-    When unset: ``pagination.items_path`` when pagination is configured, else ``"data"``."""
+    """ Optional path to the list of records in the response, e.g. "data.useCompany.associate.items".
+
+    Each item in that list becomes one row of ``output``. For Relay ``edges``, a row is the
+    ``node`` plus any extra fields on the edge (``cursor`` is left out).
+
+    When unset: ``pagination.items_path`` if pagination is set, otherwise ``"data"``."""
     pagination: PaginationSettings | None = None
     """ Optional pagination settings. When unset, read() issues a single request."""
     incremental: IncrementalSettings | None = None
@@ -193,7 +196,8 @@ class GraphqlDataset(
         Read Graphql dataset.
 
         When ``settings.read.pagination`` is set, all pages are fetched via
-        :class:`Paginate` inside this single call (see README2.md). Otherwise
+        :class:`Paginate` inside this single call (see "Pagination and
+        incremental reads" in README.md). Otherwise
         sends a GraphQL query to the endpoint with the query, variables, and operation name
         specified in settings.read. Populates self.output with the result as a DataFrame.
 
