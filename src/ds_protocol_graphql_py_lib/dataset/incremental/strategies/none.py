@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 
 class NoIncrementalRules(IncrementalRules):
-    """Used by Paginate when ``read.incremental`` is unset: prepare and commit do nothing."""
+    """Used by Paginate when ``read.incremental`` is unset: prepare, observe and commit do nothing."""
 
     def prepare(
         self,
@@ -29,6 +29,14 @@ class NoIncrementalRules(IncrementalRules):
     ) -> GraphqlRequestSnapshot:
         del checkpoint, settings
         return request
+
+    def observe(
+        self,
+        checkpoint: dict[str, Any],
+        page: pd.DataFrame,
+        settings: IncrementalSettings | None,
+    ) -> None:
+        del checkpoint, page, settings
 
     def commit(
         self,

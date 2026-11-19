@@ -165,6 +165,116 @@ def test_commit_keeps_other_checkpoint_keys(rules: WatermarkRules) -> None:
     assert checkpoint == {"pagination": {"cursor": "c1"}, "other": 1, "incremental": {"watermark": "2026-01-01"}}
 
 
+# --------------------------------------------------------------------------- commit with pending / previous
+
+
+def test_commit_uses_pending_when_higher_than_output(rules: WatermarkRules) -> None:
+    checkpoint = {"incremental": {"watermark": "2026-01-01", "pending": "2026-01-09"}}
+    assert commit(rules, [{"updatedAt": "2026-01-07"}], checkpoint) == {"incremental": {"watermark": "2026-01-09"}}
+
+
+def test_commit_uses_output_when_higher_than_pending(rules: WatermarkRules) -> None:
+    checkpoint = {"incremental": {"watermark": "2026-01-01", "pending": "2026-01-03"}}
+    assert commit(rules, [{"updatedAt": "2026-01-07"}], checkpoint) == {"incremental": {"watermark": "2026-01-07"}}
+
+
+def test_commit_empty_output_promotes_pending(rules: WatermarkRules) -> None:
+    checkpoint = {"incremental": {"watermark": "2026-01-01", "pending": "2026-01-09"}}
+    assert commit(rules, [], checkpoint) == {"incremental": {"watermark": "2026-01-09"}}
+
+
+def test_commit_first_run_without_rows_writes_nothing(rules: WatermarkRules) -> None:
+    assert commit(rules, []) == {}
+
+
+def test_commit_pending_without_previous_watermark(rules: WatermarkRules) -> None:
+    assert commit(rules, [], {"incremental": {"pending": 18}}) == {"incremental": {"watermark": 18}}
+
+
+def test_commit_never_moves_watermark_backwards(rules: WatermarkRules) -> None:
+    checkpoint = {"incremental": {"watermark": "2026-02-01"}}
+    assert commit(rules, [{"updatedAt": "2026-01-15"}], checkpoint) == {"incremental": {"watermark": "2026-02-01"}}
+
+
+def test_commit_compares_stored_iso_with_timestamps_as_instants(rules: WatermarkRules) -> None:
+    """'2026-01-01T12:00:00+02:00' sorts after '...T11:00:00+00:00' as text, but is the earlier instant."""
+    checkpoint = {"incremental": {"pending": "2026-01-01T12:00:00+02:00"}}
+    rows = [{"updatedAt": pd.Timestamp("2026-01-01T11:00:00Z")}]
+    assert commit(rules, rows, checkpoint) == {"incremental": {"watermark": "2026-01-01T11:00:00+00:00"}}
+
+
+def test_commit_pending_of_other_type_raises(rules: WatermarkRules) -> None:
+    with pytest.raises(TypeError, match="not comparable"):
+        commit(rules, [{"updatedAt": "2026-01-07"}], {"incremental": {"pending": 5}})
+
+
+# --------------------------------------------------------------------------- observe
+
+
+def observe(
+    rules: WatermarkRules,
+    rows: list[dict[str, Any]],
+    checkpoint: dict[str, Any] | None = None,
+    settings: IncrementalSettings | None = SETTINGS,
+) -> dict[str, Any]:
+    checkpoint = {} if checkpoint is None else checkpoint
+    rules.observe(checkpoint, pd.DataFrame(rows), settings)
+    return checkpoint
+
+
+def test_observe_records_page_max_as_pending_without_moving_watermark(rules: WatermarkRules) -> None:
+    checkpoint = {"incremental": {"watermark": "2026-01-01"}}
+    observe(rules, [{"updatedAt": "2026-01-04"}, {"updatedAt": "2026-01-09"}], checkpoint)
+    assert checkpoint == {"incremental": {"watermark": "2026-01-01", "pending": "2026-01-09"}}
+
+
+def test_observe_keeps_higher_pending(rules: WatermarkRules) -> None:
+    checkpoint = {"incremental": {"watermark": "2026-01-01", "pending": "2026-01-09"}}
+    observe(rules, [{"updatedAt": "2026-01-07"}], checkpoint)
+    assert checkpoint["incremental"]["pending"] == "2026-01-09"
+
+
+def test_observe_increases_pending(rules: WatermarkRules) -> None:
+    checkpoint = {"incremental": {"pending": "2026-01-03"}}
+    observe(rules, [{"updatedAt": "2026-01-07"}], checkpoint)
+    assert checkpoint == {"incremental": {"pending": "2026-01-07"}}
+
+
+def test_observe_timestamp_stored_as_iso_string(rules: WatermarkRules) -> None:
+    checkpoint = observe(rules, [{"updatedAt": pd.Timestamp("2026-01-02T10:00:00Z")}])
+    assert checkpoint == {"incremental": {"pending": "2026-01-02T10:00:00+00:00"}}
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [pytest.param([], id="empty page"), pytest.param([{"updatedAt": None}, {"id": 2}], id="no values")],
+)
+def test_observe_page_without_values_changes_nothing(rules: WatermarkRules, rows: list[dict[str, Any]]) -> None:
+    checkpoint = {"incremental": {"watermark": "2026-01-01"}}
+    observe(rules, rows, checkpoint)
+    assert checkpoint == {"incremental": {"watermark": "2026-01-01"}}
+
+
+def test_observe_without_settings_does_nothing(rules: WatermarkRules) -> None:
+    assert observe(rules, [{"updatedAt": "2026-01-07"}], settings=None) == {}
+
+
+def test_observe_mixed_types_raise(rules: WatermarkRules) -> None:
+    with pytest.raises(TypeError, match="not comparable"):
+        observe(rules, [{"updatedAt": "2026-01-07"}], {"incremental": {"pending": 5}})
+
+
+def test_prepare_ignores_pending(rules: WatermarkRules) -> None:
+    """A resumed drain keeps the failed attempt's lower bound."""
+    checkpoint = {"incremental": {"watermark": "2026-01-01", "pending": "2026-01-09"}}
+    assert rules.prepare(request(), checkpoint, SETTINGS).variables == {"since": "2026-01-01"}
+
+
+def test_prepare_with_only_pending_sends_no_watermark(rules: WatermarkRules) -> None:
+    base = request()
+    assert rules.prepare(base, {"incremental": {"pending": "2026-01-09"}}, SETTINGS) is base
+
+
 # --------------------------------------------------------------------------- prepare after commit
 
 

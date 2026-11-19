@@ -17,5 +17,17 @@ def test_rules_are_abstract() -> None:
         IncrementalRules()  # type: ignore[abstract]
 
 
-def test_rules_require_prepare_and_commit() -> None:
-    assert IncrementalRules.__abstractmethods__ == {"prepare", "commit"}
+def test_rules_require_prepare_observe_and_commit() -> None:
+    assert IncrementalRules.__abstractmethods__ == {"prepare", "observe", "commit"}
+
+
+def test_rules_without_observe_cannot_be_instantiated() -> None:
+    class NoObserve(IncrementalRules):
+        def prepare(self, request, checkpoint, settings):  # type: ignore[no-untyped-def]
+            return request
+
+        def commit(self, checkpoint, output, settings):  # type: ignore[no-untyped-def]
+            return None
+
+    with pytest.raises(TypeError, match="observe"):
+        NoObserve()  # type: ignore[abstract]

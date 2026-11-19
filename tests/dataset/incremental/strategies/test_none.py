@@ -25,3 +25,9 @@ def test_commit_does_not_touch_checkpoint() -> None:
     checkpoint = {"incremental": {"watermark": "2026-01-01"}}
     NoIncrementalRules().commit(checkpoint, pd.DataFrame([{"updatedAt": "2027-01-01"}]), SETTINGS)
     assert checkpoint == {"incremental": {"watermark": "2026-01-01"}}
+
+
+def test_observe_does_not_touch_checkpoint() -> None:
+    checkpoint = {"incremental": {"watermark": "2026-01-01"}}
+    NoIncrementalRules().observe(checkpoint, pd.DataFrame([{"updatedAt": "2027-01-01"}]), SETTINGS)
+    assert checkpoint == {"incremental": {"watermark": "2026-01-01"}}

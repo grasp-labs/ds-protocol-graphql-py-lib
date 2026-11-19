@@ -620,31 +620,87 @@ def test_run_commit_failure_keeps_pagination_checkpoint() -> None:
     assert exc_info.value.status_code == 400
     assert "not comparable" in exc_info.value.message
     assert dataset.output["associateNo"].tolist() == [1, 2]
+    # Page 2's value fails to compare with the pending max from page 1, so the drain stops there.
     assert dataset.checkpoint == {
-        "incremental": {"watermark": "2026-01-01"},
+        "incremental": {"watermark": "2026-01-01", "pending": "2026-01-05"},
         "pagination": {"strategy": "cursor", "cursor": "c1", "page_size": 2, "page_index": 1},
     }
 
 
-def test_run_failure_does_not_advance_watermark() -> None:
+def test_run_failure_does_not_advance_watermark_but_records_pending() -> None:
     dataset = visma_dataset(incremental=INCREMENTAL)
     dataset.checkpoint["incremental"] = {"watermark": "2026-01-01"}
-    run_expect(ReadError, dataset, [changed_page("2026-01-09", has_next=True, end_cursor="c1"), requests.Timeout("slow")])
-    assert dataset.output["changed"].tolist() == ["2026-01-09"]
+    run_expect(
+        ReadError,
+        dataset,
+        [changed_page("2026-01-04", "2026-01-09", has_next=True, end_cursor="c1"), requests.Timeout("slow")],
+    )
+    assert dataset.output["changed"].tolist() == ["2026-01-04", "2026-01-09"]
     assert dataset.checkpoint == {
-        "incremental": {"watermark": "2026-01-01"},
+        "incremental": {"watermark": "2026-01-01", "pending": "2026-01-09"},
         "pagination": {"strategy": "cursor", "cursor": "c1", "page_size": 2, "page_index": 1},
     }
 
 
-def test_run_resume_keeps_old_watermark_then_commits() -> None:
-    """A resumed run uses the same lower bound as the failed run; watermark advances only at the end."""
+def test_run_resume_keeps_old_watermark_then_commits_pending_max() -> None:
+    """
+    A resumed run sends the same lower bound as the failed run, and commits the
+    max over both attempts, not only over its own (smaller) tail.
+    """
     dataset = visma_dataset(incremental=INCREMENTAL)
-    dataset.checkpoint["incremental"] = {"watermark": "2026-01-01"}
+    dataset.checkpoint["incremental"] = {"watermark": "2026-01-01", "pending": "2026-01-09"}
     dataset.checkpoint["pagination"] = {"strategy": "cursor", "cursor": "c1", "page_size": 2, "page_index": 1}
     session = run(dataset, [changed_page("2026-01-07", has_next=False, end_cursor=None)])
     assert sent_variables(session) == [{"cid": 1, "filter": {}, "since": "2026-01-01", "first": 2, "after": "c1"}]
-    assert dataset.checkpoint == {"incremental": {"watermark": "2026-01-07"}}
+    assert dataset.output["changed"].tolist() == ["2026-01-07"]
+    assert dataset.checkpoint == {"incremental": {"watermark": "2026-01-09"}}
+
+
+def test_run_failure_then_resume_commits_max_across_attempts() -> None:
+    """The review scenario end to end: cursor order is not watermark order."""
+    dataset = visma_dataset(incremental=INCREMENTAL)
+    dataset.checkpoint["incremental"] = {"watermark": "2026-01-01"}
+    run_expect(
+        ReadError,
+        dataset,
+        [changed_page("2026-01-04", "2026-01-09", has_next=True, end_cursor="c1"), requests.Timeout("slow")],
+    )
+    session = run(dataset, [changed_page("2026-01-07", has_next=False, end_cursor=None)])
+    assert [v["since"] for v in sent_variables(session)] == ["2026-01-01"]
+    assert dataset.checkpoint == {"incremental": {"watermark": "2026-01-09"}}
+
+
+@pytest.mark.parametrize("items", [[], None], ids=["empty list", "null"])
+def test_run_resume_with_empty_tail_promotes_pending(items: Any) -> None:
+    dataset = visma_dataset(incremental=INCREMENTAL)
+    dataset.checkpoint["incremental"] = {"watermark": "2026-01-01", "pending": "2026-01-09"}
+    dataset.checkpoint["pagination"] = {"strategy": "cursor", "cursor": "c1", "page_size": 2, "page_index": 1}
+    body = changed_page(has_next=False, end_cursor=None)
+    body["data"]["useCompany"]["associate"]["items"] = items
+    run(dataset, [body])
+    assert dataset.output.empty
+    assert dataset.checkpoint == {"incremental": {"watermark": "2026-01-09"}}
+
+
+def test_run_records_pending_on_every_page_before_failure() -> None:
+    dataset = visma_dataset(incremental=INCREMENTAL)
+    run_expect(
+        ReadError,
+        dataset,
+        [
+            changed_page("2026-01-09", has_next=True, end_cursor="c1"),
+            changed_page("2026-01-03", has_next=True, end_cursor="c2"),
+            requests.Timeout("slow"),
+        ],
+    )
+    # First run: no watermark yet, only the pending max of both delivered pages.
+    assert dataset.checkpoint["incremental"] == {"pending": "2026-01-09"}
+
+
+def test_run_without_incremental_records_no_pending() -> None:
+    dataset = visma_dataset()
+    run_expect(ReadError, dataset, [changed_page("2026-01-09", has_next=True, end_cursor="c1"), requests.Timeout("slow")])
+    assert "incremental" not in dataset.checkpoint
 
 
 def test_run_watermark_values_not_comparable_raise_read_error() -> None:

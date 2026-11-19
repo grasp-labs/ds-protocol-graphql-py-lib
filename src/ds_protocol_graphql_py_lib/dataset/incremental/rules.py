@@ -37,6 +37,20 @@ class IncrementalRules(abc.ABC):
         """Apply persisted state (the stored watermark) to the base request."""
 
     @abc.abstractmethod
+    def observe(
+        self,
+        checkpoint: dict[str, Any],
+        page: pd.DataFrame,
+        settings: IncrementalSettings | None,
+    ) -> None:
+        """
+        Record state from each fetched page for a later ``commit``.
+
+        Never write the watermark ``prepare`` sends; use a separate checkpoint
+        key (e.g. ``pending``), so a resumed drain keeps the same lower bound.
+        """
+
+    @abc.abstractmethod
     def commit(
         self,
         checkpoint: dict[str, Any],

@@ -103,13 +103,15 @@ class Paginate:
         Prepare → drain → assign ``output`` / checkpoint.
 
         Incremental ``prepare`` injects the stored watermark (if any) into the
-        base request before the first page.
+        base request before the first page; ``observe`` records each fetched
+        page (the pending watermark max) as the drain goes.
 
-        On full success: ``output`` is all pages, incremental ``commit``
-        advances ``checkpoint["incremental"]``, then ``checkpoint["pagination"]``
-        is cleared. On failure (including a failing ``commit``): ``output`` holds
-        the pages fetched so far, ``checkpoint["pagination"]`` is kept, and the
-        watermark is unchanged.
+        On full success: ``output`` is all pages of this call, incremental
+        ``commit`` advances ``checkpoint["incremental"]`` (including what earlier
+        failed attempts observed), then ``checkpoint["pagination"]`` is cleared.
+        On failure (including a failing ``commit``): ``output`` holds the pages
+        fetched so far, ``checkpoint["pagination"]`` is kept, and the watermark
+        is unchanged.
 
         Raises:
             ReadError: On any GraphQL, transport, paging-control, or parse failure.
@@ -189,7 +191,9 @@ class Paginate:
             dataset._check_for_graphql_read_error(body)
 
             items = get_list(body, pagination.items_path)
-            frames.append(deserializer.deserialize_graphql(body, records_path=self.records_path))
+            frame = deserializer.deserialize_graphql(body, records_path=self.records_path)
+            frames.append(frame)
+            self.incremental_rules.observe(dataset.checkpoint, frame, self.incremental)
 
             if strategy.should_stop(body=body, items=items, state=state, cfg=cfg):
                 break
