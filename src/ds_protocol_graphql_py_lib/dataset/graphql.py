@@ -86,8 +86,16 @@ class GraphqlReadSettings(Serializable):
     """
     Optional incremental watermark rules, consulted by Paginate.
 
-    Ignored when ``pagination`` is unset (single-request reads do not run Paginate).
+    Requires ``pagination``: only paginated reads apply the watermark and keep
+    the checkpoint (``supports_checkpoint``), so setting it alone is an error.
     """
+
+    def __post_init__(self) -> None:
+        if self.incremental is not None and self.pagination is None:
+            raise ValueError(
+                "GraphqlReadSettings.incremental requires pagination: the watermark is only "
+                "applied by paginated reads. Set read.pagination or remove read.incremental."
+            )
 
 
 @dataclass(kw_only=True)

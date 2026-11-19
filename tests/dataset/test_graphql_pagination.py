@@ -22,7 +22,9 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 import requests
+from ds_common_serde_py_lib.errors import DeserializationError
 
 from ds_protocol_graphql_py_lib.dataset.graphql import GraphqlReadSettings
 from ds_protocol_graphql_py_lib.dataset.incremental import IncrementalSettings
@@ -237,15 +239,17 @@ def test_incremental_watermark_across_runs() -> None:
     assert dataset.checkpoint == {"incremental": {"watermark": "2026-01-10"}}
 
 
-def test_incremental_ignored_without_pagination() -> None:
-    """Single-request reads do not run Paginate, so incremental is not applied."""
-    dataset = make_dataset(
+def test_incremental_without_pagination_is_rejected() -> None:
+    """A watermark on a single-request read would be ignored, so it fails at config time."""
+    with pytest.raises(ValueError, match="incremental requires pagination"):
         GraphqlReadSettings(query=XLEDGER_QUERY, incremental=IncrementalSettings(variable="since", watermark_path="modifiedAt"))
-    )
-    dataset.checkpoint["incremental"] = {"watermark": "2026-01-03"}
-    session = run_read(dataset, [xledger_page([("e1", {"dbId": 1, "modifiedAt": "2026-01-10"})], has_next=False)])
-    assert "variables" not in session.post.call_args.kwargs["json"]
-    assert dataset.checkpoint == {"incremental": {"watermark": "2026-01-03"}}
+
+
+def test_incremental_without_pagination_is_rejected_on_deserialize() -> None:
+    """A stored config fails to load too (serde wraps the ValueError, message kept)."""
+    data = {"query": XLEDGER_QUERY, "incremental": {"variable": "since", "watermark_path": "modifiedAt"}}
+    with pytest.raises(DeserializationError, match="incremental requires pagination"):
+        GraphqlReadSettings.deserialize(data)
 
 
 # --------------------------------------------------------------------------- settings
