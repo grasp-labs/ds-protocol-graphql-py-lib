@@ -178,7 +178,9 @@ class Paginate:
         self._validate_checkpoint_strategy(checkpoint_slice, pagination.strategy.value)
         state = strategy.initial_state(cfg, checkpoint_slice)
 
-        while pagination.max_pages is None or state.page_index < pagination.max_pages:
+        fetched = 0
+        while pagination.max_pages is None or fetched < pagination.max_pages:
+            fetched += 1
             page_request = strategy.inject(request, state, cfg)
             logger.debug(f"Fetching GraphQL page {state.page_index} from {page_request.url}")
             response = dataset.linked_service.connection.session.post(

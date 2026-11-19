@@ -88,7 +88,12 @@ class PaginationSettings(Serializable):
     """
 
     max_pages: int | None = None
-    """Optional safety ceiling on pages fetched per ``read()``. Exceeding it raises."""
+    """
+    Optional safety ceiling on pages fetched per ``read()``. Exceeding it raises.
+
+    Counted per call: a read that resumes from ``checkpoint["pagination"]`` may
+    fetch up to ``max_pages`` more pages, so a large source drains over several runs.
+    """
 
     cursor: CursorPaginationSettings | None = None
     """Required when ``strategy`` is ``cursor``."""

@@ -397,25 +397,71 @@ def test_drain_max_pages_reached_with_natural_stop_succeeds() -> None:
     assert len(frames) == 2
 
 
-def test_drain_max_pages_counts_pages_from_checkpoint() -> None:
+def test_drain_max_pages_counts_pages_per_call_not_from_checkpoint() -> None:
+    """Resumed at page_index == max_pages: the call still fetches up to max_pages more pages."""
     dataset = visma_dataset(max_pages=2)
-    dataset.checkpoint["pagination"] = {"strategy": "cursor", "cursor": "c1", "page_size": 2, "page_index": 1}
+    dataset.checkpoint["pagination"] = {"strategy": "cursor", "cursor": "c2", "page_size": 2, "page_index": 2}
     with (
-        mocked_session(dataset, [page(2, has_next=True, end_cursor="c2")]) as session,
+        mocked_session(dataset, [page(3, has_next=True, end_cursor="c3"), page(4, has_next=True, end_cursor="c4")]) as session,
         pytest.raises(ReadError, match="exceeded max_pages=2"),
     ):
         paginate = Paginate.from_dataset(dataset)
         paginate.drain(dataset, paginate._snapshot(dataset))
-    assert session.post.call_count == 1
+    assert session.post.call_count == 2
+    assert dataset.checkpoint["pagination"]["cursor"] == "c4"
+    assert dataset.checkpoint["pagination"]["page_index"] == 4
 
 
-def test_drain_max_pages_already_reached_sends_nothing() -> None:
-    dataset = visma_dataset(max_pages=2)
+def test_drain_resumed_read_finishes_within_its_own_max_pages() -> None:
+    """Review case: resumed at page_index=2 with max_pages=3, the data ends one page later → success."""
+    dataset = visma_dataset(max_pages=3)
     dataset.checkpoint["pagination"] = {"strategy": "cursor", "cursor": "c2", "page_size": 2, "page_index": 2}
-    with mocked_session(dataset, []) as session, pytest.raises(ReadError, match="exceeded max_pages=2"):
+    with mocked_session(dataset, [page(3, has_next=True, end_cursor="c3"), page(4, has_next=False, end_cursor=None)]) as session:
         paginate = Paginate.from_dataset(dataset)
-        paginate.drain(dataset, paginate._snapshot(dataset))
-    assert session.post.call_count == 0
+        frames = paginate.drain(dataset, paginate._snapshot(dataset))
+    assert session.post.call_count == 2
+    assert len(frames) == 2
+
+
+def test_run_max_pages_retry_is_not_stuck() -> None:
+    """Review repro: max_pages=2 fails after 2 requests; the retry sends requests again instead of 0."""
+    dataset = visma_dataset(max_pages=2)
+    first_pages = [page(1, has_next=True, end_cursor="c1"), page(2, has_next=True, end_cursor="c2")]
+    with mocked_session(dataset, first_pages) as session, pytest.raises(ReadError, match="exceeded max_pages=2"):
+        Paginate.from_dataset(dataset).run(dataset)
+    assert session.post.call_count == 2
+    with mocked_session(dataset, [page(3, has_next=False, end_cursor=None)]) as session:
+        Paginate.from_dataset(dataset).run(dataset)
+    assert session.post.call_count == 1
+    assert sent_variables(session)[0]["after"] == "c2"
+    assert "pagination" not in dataset.checkpoint
+
+
+def test_run_max_pages_drains_large_source_over_several_runs() -> None:
+    """5 pages with max_pages=2: three runs of 2, 2 and 1 requests, each resuming where the last stopped."""
+    dataset = visma_dataset(max_pages=2)
+    pages = [
+        page(1, has_next=True, end_cursor="c1"),
+        page(2, has_next=True, end_cursor="c2"),
+        page(3, has_next=True, end_cursor="c3"),
+        page(4, has_next=True, end_cursor="c4"),
+        page(5, has_next=False, end_cursor=None),
+    ]
+    sent: list[int] = []
+    starts: list[Any] = []
+    for bodies in (pages[0:2], pages[2:4]):
+        with mocked_session(dataset, bodies) as session, pytest.raises(ReadError, match="exceeded max_pages=2"):
+            Paginate.from_dataset(dataset).run(dataset)
+        sent.append(session.post.call_count)
+        starts.append(sent_variables(session)[0].get("after"))
+    with mocked_session(dataset, pages[4:]) as session:
+        Paginate.from_dataset(dataset).run(dataset)
+    sent.append(session.post.call_count)
+    starts.append(sent_variables(session)[0].get("after"))
+
+    assert sent == [2, 2, 1]
+    assert starts == [None, "c2", "c4"]
+    assert "pagination" not in dataset.checkpoint
 
 
 # --------------------------------------------------------------------------- run: success
