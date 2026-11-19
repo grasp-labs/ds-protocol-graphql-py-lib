@@ -21,12 +21,12 @@ Commit (full success only)
     Set the watermark to the max of the previous watermark, ``pending`` and
     the values in this call's output, and drop ``pending``. The watermark
     never moves backwards, and an empty resumed tail still promotes
-    ``pending``. ``pd.Timestamp`` is stored as an ISO string; the max is taken
-    before that conversion.
+    ``pending``.
 """
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd  # type: ignore[import-untyped]
@@ -43,6 +43,19 @@ if TYPE_CHECKING:
 _CHECKPOINT_KEY = "incremental"
 _WATERMARK_KEY = "watermark"
 _PENDING_KEY = "pending"
+
+# Strings starting like an ISO date (YYYY-MM-DD) are compared as timestamps.
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _comparable(value: Any) -> Any:
+    """Sort key: ISO date strings become ``pd.Timestamp``; anything else is compared as is."""
+    if isinstance(value, str) and _ISO_DATE.match(value):
+        try:
+            return pd.Timestamp(value)
+        except ValueError:
+            return value
+    return value
 
 
 @register(IncrementalStrategy.WATERMARK)
@@ -137,14 +150,10 @@ class WatermarkRules(IncrementalRules):
     @staticmethod
     def _max(values: list[Any], settings: IncrementalSettings) -> Any:
         """
-        Max of ``values``. Stored values are ISO strings when the rows carry
-        ``pd.Timestamp``, so strings are parsed back before comparing: string
-        order is wrong across UTC offsets.
+        Max of ``values``, comparing ISO date strings as instants.
         """
-        if any(isinstance(value, pd.Timestamp) for value in values):
-            values = [pd.Timestamp(value) if isinstance(value, str) else value for value in values]
         try:
-            return max(values)
+            return max(values, key=_comparable)
         except TypeError as exc:
             types = sorted({type(value).__name__ for value in values})
             raise TypeError(

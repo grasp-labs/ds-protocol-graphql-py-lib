@@ -208,6 +208,56 @@ def test_commit_pending_of_other_type_raises(rules: WatermarkRules) -> None:
         commit(rules, [{"updatedAt": "2026-01-07"}], {"incremental": {"pending": 5}})
 
 
+# --------------------------------------------------------------------------- comparing date strings
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        pytest.param(["2026-01-01T10:00:00.500Z", "2026-01-01T10:00:00Z"], "2026-01-01T10:00:00.500Z", id="fractional seconds"),
+        pytest.param(["2026-01-01T10:00:00.5Z", "2026-01-01T10:00:00.123456Z"], "2026-01-01T10:00:00.5Z", id="mixed precision"),
+        pytest.param(["2026-01-01T11:00:00Z", "2026-01-01T12:00:00+02:00"], "2026-01-01T11:00:00Z", id="offsets"),
+        pytest.param(["2026-01-01T10:30:00+00:00", "2026-01-01T10:00:00Z"], "2026-01-01T10:30:00+00:00", id="Z vs +00:00"),
+        pytest.param(["2026-01-09", "2026-01-08T23:59:59"], "2026-01-09", id="date vs datetime"),
+        pytest.param(["2026-01-01T09:00:00", "2026-01-01T10:00:00"], "2026-01-01T10:00:00", id="naive"),
+    ],
+)
+def test_commit_compares_iso_strings_as_instants(rules: WatermarkRules, values: list[str], expected: str) -> None:
+    assert commit(rules, [{"updatedAt": value} for value in values])["incremental"]["watermark"] == expected
+
+
+def test_commit_keeps_the_winning_string_in_its_own_format(rules: WatermarkRules) -> None:
+    checkpoint = {"incremental": {"watermark": "2026-01-01T10:00:00Z"}}
+    commit(rules, [{"updatedAt": "2026-01-01T10:00:00.250+00:00"}], checkpoint)
+    assert checkpoint == {"incremental": {"watermark": "2026-01-01T10:00:00.250+00:00"}}
+
+
+def test_commit_stored_watermark_wins_over_earlier_instant_in_another_format(rules: WatermarkRules) -> None:
+    checkpoint = {"incremental": {"watermark": "2026-01-01T10:00:00.500Z"}}
+    commit(rules, [{"updatedAt": "2026-01-01T12:00:00+02:00"}], checkpoint)
+    assert checkpoint == {"incremental": {"watermark": "2026-01-01T10:00:00.500Z"}}
+
+
+def test_commit_non_date_strings_compare_as_text(rules: WatermarkRules) -> None:
+    assert commit(rules, [{"updatedAt": "b"}, {"updatedAt": "a"}])["incremental"]["watermark"] == "b"
+
+
+def test_commit_date_looking_string_that_does_not_parse_compares_as_text(rules: WatermarkRules) -> None:
+    rows = [{"updatedAt": "2026-01-01-batch-b"}, {"updatedAt": "2026-01-01-batch-a"}]
+    assert commit(rules, rows)["incremental"]["watermark"] == "2026-01-01-batch-b"
+
+
+def test_commit_aware_and_naive_timestamps_raise(rules: WatermarkRules) -> None:
+    with pytest.raises(TypeError, match="not comparable"):
+        commit(rules, [{"updatedAt": "2026-01-01T10:00:00Z"}, {"updatedAt": "2026-01-01T11:00:00"}])
+
+
+def test_observe_compares_iso_strings_as_instants(rules: WatermarkRules) -> None:
+    checkpoint = {"incremental": {"pending": "2026-01-01T10:00:00Z"}}
+    observe(rules, [{"updatedAt": "2026-01-01T10:00:00.500Z"}], checkpoint)
+    assert checkpoint == {"incremental": {"pending": "2026-01-01T10:00:00.500Z"}}
+
+
 # --------------------------------------------------------------------------- observe
 
 
