@@ -183,12 +183,11 @@ class Paginate:
             fetched += 1
             page_request = strategy.inject(request, state, cfg)
             logger.debug(f"Fetching GraphQL page {state.page_index} from {page_request.url}")
-            response = dataset.linked_service.connection.session.post(
+            response = dataset.linked_service.connection.post(
                 url=page_request.url,
                 json=page_request.to_payload(),
                 headers=page_request.headers,
             )
-            response.raise_for_status()
             body = response.json()
             dataset._check_for_graphql_read_error(body)
 

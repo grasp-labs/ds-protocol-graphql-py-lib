@@ -47,8 +47,10 @@ from ds_resource_plugin_py_lib.common.resource.dataset.errors import (
     ListError,
     ReadError,
 )
-from ds_resource_plugin_py_lib.common.resource.errors import NotSupportedError
+from ds_resource_plugin_py_lib.common.resource.errors import NotSupportedError, ResourceException
 from ds_resource_plugin_py_lib.common.resource.linked_service.errors import (
+    AuthenticationError,
+    AuthorizationError,
     ConnectionError,
 )
 from ds_resource_plugin_py_lib.common.serde.serialize import PandasSerializer
@@ -196,8 +198,12 @@ class GraphqlDataset(
             None. The result is stored in self.output as a DataFrame.
 
         Raises:
-            ConnectionError: If the linked service connection is not initialized.
-            ReadError: If read settings are not provided or if the GraphQL query fails.
+            ConnectionError: If the connection is not initialized, or the request
+                cannot reach the server (raised by the linked service's connection).
+            AuthenticationError: On HTTP 401 (raised by the linked service's connection).
+            AuthorizationError: On HTTP 403 (raised by the linked service's connection).
+            ReadError: If read settings are not provided, the GraphQL query fails,
+                or on any other HTTP error status (with that ``status_code``).
         """
         if self.linked_service.connection is None:
             raise ConnectionError(message="Connection is not initialized.") from None
@@ -223,13 +229,12 @@ class GraphqlDataset(
             if self.settings.read.operation_name:
                 payload["operationName"] = self.settings.read.operation_name
 
-            result = self.linked_service.connection.session.post(
+            result = self.linked_service.connection.post(
                 url=self.settings.url,
                 json=payload,
                 headers=self.settings.headers,
             )
 
-            result.raise_for_status()
             response_data = result.json()
 
             self._check_for_graphql_read_error(response_data)
@@ -238,8 +243,15 @@ class GraphqlDataset(
                 records_path=self.settings.read.records_path or DEFAULT_RECORDS_PATH,
             )
 
-        except ReadError:
+        except (AuthenticationError, AuthorizationError, ConnectionError, ReadError):
             raise
+        except ResourceException as exc:
+            # HTTP error status from the connection: same conversion as Paginate.run, keeping the status code.
+            raise ReadError(
+                message=exc.message,
+                status_code=exc.status_code,
+                details={**exc.details, "type": self.type.value},
+            ) from exc
         except Exception as e:
             raise ReadError(
                 message=f"Failed to read from GraphQL: {e!s}",

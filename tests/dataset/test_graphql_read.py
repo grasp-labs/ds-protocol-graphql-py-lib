@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 import uuid
+from typing import Any
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pandas as pd
@@ -21,7 +22,10 @@ from ds_protocol_http_py_lib import HttpLinkedService, HttpLinkedServiceSettings
 from ds_protocol_http_py_lib.enums import AuthType
 from ds_resource_plugin_py_lib.common.resource.dataset import DatasetStorageFormatType
 from ds_resource_plugin_py_lib.common.resource.dataset.errors import ReadError
+from ds_resource_plugin_py_lib.common.resource.errors import ResourceException
 from ds_resource_plugin_py_lib.common.resource.linked_service.errors import (
+    AuthenticationError,
+    AuthorizationError,
     ConnectionError,
 )
 from ds_resource_plugin_py_lib.common.serde.serialize import PandasSerializer
@@ -60,7 +64,7 @@ def test_read_returns_none():
     mock_connection = MagicMock()
     mock_response = MagicMock()
     mock_response.json.return_value = {"data": {"allPosts": [{"id": "1", "title": "Test"}]}}
-    mock_connection.session.post.return_value = mock_response
+    mock_connection.post.return_value = mock_response
 
     with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
         mock_prop.return_value = mock_connection
@@ -97,7 +101,7 @@ def test_read_populates_output():
     mock_response = MagicMock()
     response_data = {"data": {"allPosts": [{"id": "1", "title": "Post 1"}]}}
     mock_response.json.return_value = response_data
-    mock_connection.session.post.return_value = mock_response
+    mock_connection.post.return_value = mock_response
 
     with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
         mock_prop.return_value = mock_connection
@@ -141,14 +145,14 @@ def test_read_with_variables():
     mock_connection = MagicMock()
     mock_response = MagicMock()
     mock_response.json.return_value = {"data": {"post": {"id": "123", "title": "Test"}}}
-    mock_connection.session.post.return_value = mock_response
+    mock_connection.post.return_value = mock_response
 
     with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
         mock_prop.return_value = mock_connection
         dataset.read()
 
     # Verify the POST was called with variables in payload
-    call_kwargs = mock_connection.session.post.call_args[1]
+    call_kwargs = mock_connection.post.call_args[1]
     assert "variables" in call_kwargs["json"]
     assert call_kwargs["json"]["variables"] == {"id": "123"}
 
@@ -182,14 +186,14 @@ def test_read_with_operation_name():
     mock_connection = MagicMock()
     mock_response = MagicMock()
     mock_response.json.return_value = {"data": {"allPosts": []}}
-    mock_connection.session.post.return_value = mock_response
+    mock_connection.post.return_value = mock_response
 
     with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
         mock_prop.return_value = mock_connection
         dataset.read()
 
     # Verify the POST was called with operation name in payload
-    call_kwargs = mock_connection.session.post.call_args[1]
+    call_kwargs = mock_connection.post.call_args[1]
     assert "operationName" in call_kwargs["json"]
     assert call_kwargs["json"]["operationName"] == "GetAllPosts"
 
@@ -224,14 +228,14 @@ def test_read_with_variables_and_operation_name():
     mock_connection = MagicMock()
     mock_response = MagicMock()
     mock_response.json.return_value = {"data": {"post": {"id": "123", "title": "Test"}}}
-    mock_connection.session.post.return_value = mock_response
+    mock_connection.post.return_value = mock_response
 
     with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
         mock_prop.return_value = mock_connection
         dataset.read()
 
     # Verify the POST was called with both variables and operation name
-    call_kwargs = mock_connection.session.post.call_args[1]
+    call_kwargs = mock_connection.post.call_args[1]
     assert call_kwargs["json"]["variables"] == {"id": "123"}
     assert call_kwargs["json"]["operationName"] == "GetPost"
 
@@ -330,7 +334,7 @@ def test_read_relay_style_pagination():
             }
         }
     }
-    mock_connection.session.post.return_value = mock_response
+    mock_connection.post.return_value = mock_response
 
     with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
         mock_prop.return_value = mock_connection
@@ -384,7 +388,7 @@ def test_read_nested_dict_with_array_field():
             }
         }
     }
-    mock_connection.session.post.return_value = mock_response
+    mock_connection.post.return_value = mock_response
 
     with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
         mock_prop.return_value = mock_connection
@@ -459,7 +463,7 @@ def test_read_json_parse_error_wrapped():
     mock_response = MagicMock()
     mock_response.raise_for_status.return_value = None
     mock_response.json.side_effect = ValueError("Invalid JSON")
-    mock_connection.session.post.return_value = mock_response
+    mock_connection.post.return_value = mock_response
 
     with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
         mock_prop.return_value = mock_connection
@@ -493,7 +497,7 @@ def test_read_graphql_errors_response_raises_read_error_with_details() -> None:
     mock_connection = MagicMock()
     mock_response = MagicMock()
     mock_response.json.return_value = {"errors": [{"message": "boom"}]}
-    mock_connection.session.post.return_value = mock_response
+    mock_connection.post.return_value = mock_response
 
     with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
         mock_prop.return_value = mock_connection
@@ -541,3 +545,71 @@ def test_check_for_graphql_read_error_raises_read_error_with_expected_message(
         GraphqlDataset._check_for_graphql_read_error(response_data)
 
     assert exc_info.value.details == {"errors": response_data["errors"]}
+
+
+def _single_request_dataset() -> GraphqlDataset[Any, Any]:
+    linked_service = HttpLinkedService(
+        settings=HttpLinkedServiceSettings(host="https://example.graphql.api/", auth_type=AuthType.NO_AUTH),
+        id=uuid.uuid4(),
+        name="test_linked_service",
+        version="1.0.0",
+    )
+    return GraphqlDataset(
+        deserializer=GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
+        settings=GraphqlDatasetSettings(
+            url="https://example.graphql.api/graphql",
+            read=GraphqlReadSettings(query="{ allPosts { id } }"),
+        ),
+        linked_service=linked_service,
+        id=uuid.uuid4(),
+        name="test_dataset",
+        version="1.0.0",
+    )
+
+
+def _read_raising(dataset: GraphqlDataset[Any, Any], error: Exception) -> MagicMock:
+    """Run ``read()`` with ``connection.post`` raising ``error``, as the linked service's connection does."""
+    connection = MagicMock()
+    connection.post.side_effect = error
+    with patch.object(type(dataset.linked_service), "connection", new_callable=PropertyMock) as prop:
+        prop.return_value = connection
+        dataset.read()
+    return connection
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(AuthenticationError(message="Authentication error: 401"), id="401"),
+        pytest.param(AuthorizationError(message="Authorization error: 403"), id="403"),
+        pytest.param(ConnectionError(message="Connection error: refused"), id="network"),
+    ],
+)
+def test_read_reraises_linked_service_errors_from_connection(error: Exception) -> None:
+    """Single-request read: the connection's auth / network errors pass through, not a ReadError 500."""
+    with pytest.raises(type(error)) as exc_info:
+        _read_raising(_single_request_dataset(), error)
+    assert exc_info.value is error
+
+
+@pytest.mark.parametrize("status", [400, 429, 503])
+def test_read_http_error_status_keeps_real_status_code(status: int) -> None:
+    dataset = _single_request_dataset()
+    error = ResourceException(message=f"HTTP error: {status}", status_code=status, details={"method": "POST"})
+    with pytest.raises(ReadError, match="HTTP error") as exc_info:
+        _read_raising(dataset, error)
+    assert exc_info.value.status_code == status
+    assert exc_info.value.details == {"method": "POST", "type": dataset.type.value}
+    assert exc_info.value.__cause__ is error
+
+
+def test_read_posts_through_linked_service_connection() -> None:
+    dataset = _single_request_dataset()
+    connection = MagicMock()
+    connection.post.return_value.json.return_value = {"data": {"allPosts": [{"id": 1}]}}
+    with patch.object(type(dataset.linked_service), "connection", new_callable=PropertyMock) as prop:
+        prop.return_value = connection
+        dataset.read()
+    assert connection.post.call_count == 1
+    connection.session.post.assert_not_called()
+    assert dataset.output["id"].tolist() == [1]

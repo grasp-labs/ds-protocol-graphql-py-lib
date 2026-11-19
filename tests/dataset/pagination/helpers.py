@@ -151,19 +151,21 @@ def response(body: dict[str, Any]) -> MagicMock:
 @contextmanager
 def mocked_session(dataset: GraphqlDataset[Any, Any], bodies: list[Any]) -> Iterator[MagicMock]:
     """
-    Patch ``linked_service.connection`` so ``session.post`` returns ``bodies`` in order.
+    Patch ``linked_service.connection`` so ``connection.post`` returns ``bodies`` in order.
 
-    An ``Exception`` instance in ``bodies`` is raised by that call instead.
+    An ``Exception`` instance in ``bodies`` is raised by that call instead, the
+    way the connection raises ``AuthenticationError`` / ``ResourceException``.
+    Yields the connection mock (``.post`` holds the calls).
     """
     connection = MagicMock()
-    connection.session.post.side_effect = [b if isinstance(b, Exception) else response(b) for b in bodies]
+    connection.post.side_effect = [b if isinstance(b, Exception) else response(b) for b in bodies]
     with patch.object(type(dataset.linked_service), "connection", new_callable=PropertyMock) as prop:
         prop.return_value = connection
-        yield connection.session
+        yield connection
 
 
 def run_read(dataset: GraphqlDataset[Any, Any], bodies: list[Any]) -> MagicMock:
-    """Run ``read()`` with the given page bodies; return the session mock."""
+    """Run ``read()`` with the given page bodies; return the connection mock."""
     with mocked_session(dataset, bodies) as session:
         dataset.read()
     return session
@@ -172,12 +174,12 @@ def run_read(dataset: GraphqlDataset[Any, Any], bodies: list[Any]) -> MagicMock:
 def run_read_expect_error(
     dataset: GraphqlDataset[Any, Any], bodies: list[Any]
 ) -> tuple[pytest.ExceptionInfo[ReadError], MagicMock]:
-    """Run ``read()`` expecting ``ReadError``; return the error info and the session mock."""
+    """Run ``read()`` expecting ``ReadError``; return the error info and the connection mock."""
     with mocked_session(dataset, bodies) as session, pytest.raises(ReadError) as exc_info:
         dataset.read()
     return exc_info, session
 
 
 def sent_variables(session: MagicMock) -> list[dict[str, Any]]:
-    """GraphQL variables sent on each ``session.post`` call, in order."""
+    """GraphQL variables sent on each ``connection.post`` call, in order."""
     return [call.kwargs["json"].get("variables", {}) for call in session.post.call_args_list]

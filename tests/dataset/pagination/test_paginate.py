@@ -335,14 +335,12 @@ def test_drain_raises_on_graphql_errors() -> None:
         drain(visma_dataset(), [body])
 
 
-def test_drain_raises_on_http_error_status() -> None:
+def test_drain_posts_through_linked_service_connection() -> None:
+    """Not the raw session: the connection maps 401/403/network/status errors and applies its timeout."""
     dataset = visma_dataset()
-    paginate = Paginate.from_dataset(dataset)
-    with mocked_session(dataset, [page(1, has_next=False, end_cursor=None)]) as session:
-        session.post.side_effect = None
-        session.post.return_value.raise_for_status.side_effect = requests.HTTPError("401 Client Error")
-        with pytest.raises(requests.HTTPError):
-            paginate.drain(dataset, paginate._snapshot(dataset))
+    _, connection = drain(dataset, [page(1, has_next=False, end_cursor=None)])
+    assert connection.post.call_count == 1
+    connection.session.post.assert_not_called()
 
 
 def test_drain_items_path_parent_null_raises() -> None:
