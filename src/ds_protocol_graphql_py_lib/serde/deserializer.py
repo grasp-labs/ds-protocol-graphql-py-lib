@@ -23,8 +23,11 @@ from ..utils.json_utils import get_path
 # Where deserialization starts when no ``records_path`` is given: the GraphQL ``data`` object.
 DEFAULT_RECORDS_PATH = "data"
 
-# Keys a Relay edge may have besides ``node``: its ``cursor`` and GraphQL's ``__typename`` meta field.
-_EDGE_KEYS = frozenset({"node", "cursor", "__typename"})
+# Key of a Relay connection's edge list. Elements of a list under this key are edges.
+_EDGES_KEY = "edges"
+
+# Edge fields that describe the edge itself, not the record: dropped when an edge becomes a row.
+_EDGE_META_KEYS = frozenset({"cursor", "__typename"})
 
 
 class GraphqlDeserializer(PandasDeserializer):
@@ -33,7 +36,9 @@ class GraphqlDeserializer(PandasDeserializer):
 
     Starts at ``records_path`` (default ``"data"``) and turns the value there
     into rows:
-    - Lists: one row per element; Relay edges (``{"cursor", "node", "__typename"}``) are unwrapped to ``node``
+    - Lists: one row per element
+    - Relay edges (a list under ``edges``, reached by the default path or a
+      ``records_path`` ending in ``.edges``): see :meth:`_edge_row`
     - Direct arrays: {"data": {"users": [...]}}
     - Relay connections: {"data": {"users": {"edges": [{"node": {...}}]}}}
     - Single objects: {"data": {"user": {...}}}
@@ -63,36 +68,50 @@ class GraphqlDeserializer(PandasDeserializer):
         if records_path == DEFAULT_RECORDS_PATH and DEFAULT_RECORDS_PATH not in data:
             return self._parse_graphql_data(data)
 
-        return self._parse_graphql_data(get_path(data, records_path))
+        extracted_data = get_path(data, records_path)
+        if isinstance(extracted_data, list):
+            return self._frame_from_list(extracted_data, key=records_path.rsplit(".", 1)[-1])
+
+        return self._parse_graphql_data(extracted_data)
 
     @staticmethod
-    def _unwrap_edge(record: Any) -> Any:
+    def _edge_row(edge: Any) -> Any:
         """
-        Relay edge → its ``node``; anything else passes through unchanged.
+        One Relay edge → one row, or ``None`` to skip it. Same rule on every path.
 
-        Only dicts shaped like an edge are unwrapped: a ``node`` dict and no keys
-        other than ``node`` / ``cursor`` / ``__typename`` (clients such as Apollo
-        add ``__typename`` to every selection). A normal row that happens to have
-        a ``node`` field is left alone.
+        - ``node`` is a dict: the row is the node's fields plus the edge's own
+          fields (e.g. ``role`` on a membership edge). ``cursor`` and
+          ``__typename`` describe the edge and are dropped; on a name clash the
+          node's value wins.
+        - ``node`` is ``null``: no record (e.g. deleted or hidden), skipped even
+          when the edge has other fields.
+        - ``null`` element: skipped.
+        - Anything else (no ``node`` selected, or a non-dict node): kept as is.
         """
-        if isinstance(record, dict) and isinstance(record.get("node"), dict) and record.keys() <= _EDGE_KEYS:
-            return record["node"]
-        return record
+        if edge is None:
+            return None
+        if not isinstance(edge, dict) or "node" not in edge:
+            return edge
+        node = edge["node"]
+        if node is None:
+            return None
+        if not isinstance(node, dict):
+            return edge
+        extra = {key: value for key, value in edge.items() if key != "node" and key not in _EDGE_META_KEYS}
+        return {**extra, **node}
 
-    @staticmethod
-    def _is_null_node_edge(record: Any) -> bool:
+    def _frame_from_edges(self, edges: list[Any]) -> pd.DataFrame:
+        """Rows from a Relay ``edges`` list (see :meth:`_edge_row`)."""
+        return pd.DataFrame([row for edge in edges if (row := self._edge_row(edge)) is not None])
+
+    def _frame_from_list(self, records: list[Any], *, key: str | None = None) -> pd.DataFrame:
         """
-        True for a Relay edge whose ``node`` is ``null`` (no record, e.g. deleted or hidden).
-
-        Same shape rule as :meth:`_unwrap_edge`: only ``node`` / ``cursor`` /
-        ``__typename`` keys. A normal row with ``"node": None`` and other fields
-        is not an edge and is kept.
+        One row per element. A list under ``edges`` is a Relay edge list; any
+        other list is taken as rows unchanged (a ``node`` field there is data).
         """
-        return isinstance(record, dict) and "node" in record and record["node"] is None and record.keys() <= _EDGE_KEYS
-
-    def _frame_from_list(self, records: list[Any]) -> pd.DataFrame:
-        """One row per element, with Relay edges unwrapped to ``node`` and null-node edges skipped."""
-        return pd.DataFrame([self._unwrap_edge(record) for record in records if not self._is_null_node_edge(record)])
+        if key == _EDGES_KEY:
+            return self._frame_from_edges(records)
+        return pd.DataFrame(records)
 
     def _parse_graphql_data(self, data: Any) -> pd.DataFrame:
         """
@@ -116,11 +135,11 @@ class GraphqlDeserializer(PandasDeserializer):
             return pd.DataFrame([data])
 
         if len(data) == 1:
-            nested_value = next(iter(data.values()))
+            key, nested_value = next(iter(data.items()))
 
             # Nested value is a list - use it
             if isinstance(nested_value, list):
-                return self._frame_from_list(nested_value)
+                return self._frame_from_list(nested_value, key=key)
 
             # Nested value has edges (Relay pagination)
             if isinstance(nested_value, dict) and "edges" in nested_value:
@@ -166,12 +185,10 @@ class GraphqlDeserializer(PandasDeserializer):
             data: Dict containing "edges" key with Relay pagination structure
 
         Returns:
-            DataFrame with nodes extracted from edges; edges with a ``null``
-            node are skipped (no record).
+            DataFrame with one row per edge (see :meth:`_edge_row`).
         """
-        edges = data.get("edges", [])
+        edges = data.get(_EDGES_KEY, [])
         if not isinstance(edges, list):
             return pd.DataFrame()
 
-        nodes = [node for edge in edges if edge and (node := edge.get("node", edge)) is not None]
-        return pd.DataFrame(nodes)
+        return self._frame_from_edges(edges)

@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 import pandas as pd
+import pytest
 from ds_resource_plugin_py_lib.common.resource.dataset import DatasetStorageFormatType
 
 from ds_protocol_graphql_py_lib.serde.deserializer import GraphqlDeserializer
@@ -188,12 +189,62 @@ def test_node_typename_is_kept_as_a_column() -> None:
     assert df.to_dict(orient="records") == [{"__typename": "Customer", "dbId": 1}]
 
 
-def test_edge_with_other_extra_fields_is_not_unwrapped() -> None:
-    """Edge fields other than cursor/__typename may be data (e.g. a score), so the edge stays as is."""
+def test_edge_fields_are_merged_into_the_node_row() -> None:
+    """Edge data (e.g. a score) joins the node's fields; cursor and __typename describe the edge and are dropped."""
     deserializer = _deserializer()
-    edges = [{"cursor": "a", "score": 0.9, "node": {"dbId": 1}}]
+    edges = [{"__typename": "CustomerEdge", "cursor": "a", "score": 0.9, "node": {"dbId": 1}}]
     df = deserializer.deserialize_graphql({"data": {"customers": {"edges": edges}}}, records_path="data.customers.edges")
-    assert set(df.columns) == {"cursor", "score", "node"}
+    assert df.to_dict(orient="records") == [{"score": 0.9, "dbId": 1}]
+
+
+# Membership edges from the review: an extra edge field, a plain edge and a null node.
+MEMBER_EDGES = [
+    {"cursor": "a", "node": {"id": 1}},
+    {"cursor": "b", "role": "admin", "node": {"id": 2}},
+    {"cursor": "c", "role": "guest", "node": None},
+]
+
+
+@pytest.mark.parametrize(
+    ("response", "records_path"),
+    [
+        pytest.param({"data": {"members": {"edges": MEMBER_EDGES}}}, "data.members.edges", id="records_path at edges"),
+        pytest.param(
+            {"data": {"members": {"pageInfo": {"hasNextPage": False}, "edges": MEMBER_EDGES}}},
+            "data.members",
+            id="records_path at connection",
+        ),
+        pytest.param({"data": {"members": {"edges": MEMBER_EDGES}}}, "data", id="default path"),
+        pytest.param({"data": {"edges": MEMBER_EDGES}}, "data", id="top-level edges"),
+    ],
+)
+def test_edges_give_the_same_rows_on_every_path(response: dict[str, Any], records_path: str) -> None:
+    """One rule for every path: node fields + edge fields, null node skipped, no cursor/node columns."""
+    df = _deserializer().deserialize_graphql(response, records_path=records_path)
+    assert set(df.columns) == {"id", "role"}
+    assert df["id"].tolist() == [1, 2]
+    assert pd.isna(df["role"].iloc[0])  # the plain edge has no role
+    assert df["role"].iloc[1] == "admin"
+
+
+def test_node_field_wins_over_edge_field_with_the_same_name() -> None:
+    df = _edges_frame([{"cursor": "a", "id": "edge-id", "since": 2020, "node": {"id": 1}}])
+    assert df.to_dict(orient="records") == [{"id": 1, "since": 2020}]
+
+
+def test_edge_without_node_selected_is_kept_as_is() -> None:
+    """Only the cursor selected: nothing to unwrap."""
+    assert _edges_frame([{"cursor": "a"}, {"cursor": "b"}])["cursor"].tolist() == ["a", "b"]
+
+
+def test_edge_with_non_dict_node_is_kept_as_is() -> None:
+    """``node`` selected as a scalar (not an object): nothing to unwrap into, so the edge stays a row."""
+    df = _edges_frame([{"cursor": "a", "node": "Q3VzdG9tZXI6MQ=="}])
+    assert df.to_dict(orient="records") == [{"cursor": "a", "node": "Q3VzdG9tZXI6MQ=="}]
+
+
+def test_null_edge_element_is_skipped() -> None:
+    assert _edges_frame([None, {"cursor": "a", "node": {"dbId": 1}}]).to_dict(orient="records") == [{"dbId": 1}]
 
 
 def _edges_frame(edges: list[dict[str, Any]], records_path: str = "data.customers.edges") -> pd.DataFrame:
@@ -216,10 +267,9 @@ def test_only_null_node_edges_give_empty_frame() -> None:
     assert _edges_frame([{"cursor": "a", "node": None}]).empty
 
 
-def test_null_node_edge_with_other_fields_is_kept() -> None:
-    """Not edge-shaped (extra field), so it may be data: left as is."""
-    df = _edges_frame([{"cursor": "a", "score": 0.9, "node": None}])
-    assert df.to_dict(orient="records") == [{"cursor": "a", "score": 0.9, "node": None}]
+def test_null_node_edge_with_other_fields_is_skipped() -> None:
+    """A null node is no record, whatever else the edge carries."""
+    assert _edges_frame([{"cursor": "a", "score": 0.9, "node": None}]).empty
 
 
 def test_row_with_null_node_field_is_kept() -> None:
@@ -237,7 +287,7 @@ def test_connection_path_skips_null_node_edges() -> None:
 
 
 def test_row_with_node_field_is_not_unwrapped() -> None:
-    """Only edge-shaped dicts (node + optional cursor / __typename) are unwrapped."""
+    """Only lists under ``edges`` are edge lists; elsewhere a ``node`` field is data."""
     deserializer = _deserializer()
     rows = [{"id": 1, "node": {"x": 1}}, {"id": 2, "node": {"x": 2}}]
     df = deserializer.deserialize_graphql({"data": {"things": rows}})
