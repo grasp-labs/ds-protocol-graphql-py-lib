@@ -51,7 +51,8 @@ class GraphqlDeserializer(PandasDeserializer):
                 The value there is parsed with the same rules as the default: lists
                 become rows (Relay edges unwrapped to ``node``), connections are
                 unwrapped, single objects become one row. Missing or null yields an
-                empty DataFrame.
+                empty DataFrame. With the default path, a payload without a
+                top-level ``"data"`` key is parsed as a whole (already unwrapped).
 
         Returns:
             DataFrame containing the extracted data
@@ -59,9 +60,10 @@ class GraphqlDeserializer(PandasDeserializer):
         if not isinstance(data, dict):
             return pd.DataFrame()
 
-        extracted_data = get_path(data, records_path)
+        if records_path == DEFAULT_RECORDS_PATH and DEFAULT_RECORDS_PATH not in data:
+            return self._parse_graphql_data(data)
 
-        return self._parse_graphql_data(extracted_data)
+        return self._parse_graphql_data(get_path(data, records_path))
 
     @staticmethod
     def _unwrap_edge(record: Any) -> Any:

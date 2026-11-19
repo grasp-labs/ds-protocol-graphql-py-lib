@@ -134,7 +134,32 @@ def test_records_path_to_connection_unwraps_edges() -> None:
 def test_default_records_path_is_data() -> None:
     deserializer = _deserializer()
     assert deserializer.deserialize_graphql({"data": {"users": [{"id": 1}]}})["id"].tolist() == [1]
-    assert deserializer.deserialize_graphql({"users": [{"id": 1}]}).empty  # no "data" key → nothing to read
+
+
+def test_default_records_path_without_data_key_parses_whole_payload() -> None:
+    """Backwards compatible with ``data.get("data", data)``: an already-unwrapped payload still yields rows."""
+    df = _deserializer().deserialize_graphql({"users": [{"id": 1}, {"id": 2}]})
+    assert df["id"].tolist() == [1, 2]
+
+
+def test_default_records_path_with_null_data_is_empty() -> None:
+    """``"data": null`` is present, so there is no fallback to the whole payload (which would hold ``errors``)."""
+    assert _deserializer().deserialize_graphql({"data": None, "errors": [{"message": "x"}]}).empty
+
+
+def test_explicit_records_path_without_data_key_stays_strict() -> None:
+    assert _deserializer().deserialize_graphql({"users": [{"id": 1}]}, records_path="data.users").empty
+
+
+def test_data_as_list_yields_rows() -> None:
+    """Not valid GraphQL (``data`` is always an object), but tolerated: each item becomes a row."""
+    df = _deserializer().deserialize_graphql({"data": [{"id": 1}, {"id": 2}]})
+    assert df["id"].tolist() == [1, 2]
+
+
+def test_bare_list_payload_returns_empty_dataframe() -> None:
+    """A GraphQL response is always an object; a bare list is not read (pass the full response instead)."""
+    assert _deserializer().deserialize_graphql([{"id": 1}, {"id": 2}]).empty
 
 
 def test_top_level_edges_are_unwrapped() -> None:
