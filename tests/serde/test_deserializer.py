@@ -11,7 +11,10 @@ Covers:
 
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
+import pytest
 from ds_resource_plugin_py_lib.common.resource.dataset import DatasetStorageFormatType
 
 from ds_protocol_graphql_py_lib.serde.deserializer import GraphqlDeserializer
@@ -79,3 +82,214 @@ def test_extract_relay_nodes_non_list_edges_returns_empty_dataframe() -> None:
 
     assert isinstance(result, pd.DataFrame)
     assert result.empty
+
+
+def test_records_path_extracts_list_next_to_page_info() -> None:
+    """Visma-style: items next to pageInfo / totalCount become rows."""
+    deserializer = _deserializer()
+    response = {
+        "data": {
+            "useCompany": {
+                "associate": {
+                    "items": [{"associateNo": 1}, {"associateNo": 2}],
+                    "totalCount": 2,
+                    "pageInfo": {"hasNextPage": False, "endCursor": "x"},
+                }
+            }
+        }
+    }
+    df = deserializer.deserialize_graphql(response, records_path="data.useCompany.associate.items")
+    assert df["associateNo"].tolist() == [1, 2]
+    assert list(df.columns) == ["associateNo"]
+
+
+def test_records_path_unwraps_relay_edges() -> None:
+    """Xledger-style: edges are unwrapped to node; cursor is not a column."""
+    deserializer = _deserializer()
+    response = {"data": {"customers": {"edges": [{"cursor": "a", "node": {"dbId": 1}}, {"cursor": "b", "node": {"dbId": 2}}]}}}
+    df = deserializer.deserialize_graphql(response, records_path="data.customers.edges")
+    assert list(df.columns) == ["dbId"]
+    assert df["dbId"].tolist() == [1, 2]
+
+
+def test_records_path_missing_or_null_returns_empty() -> None:
+    deserializer = _deserializer()
+    assert deserializer.deserialize_graphql({"data": {"x": None}}, records_path="data.x.items").empty
+    assert deserializer.deserialize_graphql({"data": {"x": {"items": None}}}, records_path="data.x.items").empty
+
+
+def test_records_path_to_single_object_gives_one_row() -> None:
+    """The value at records_path goes through the same rules as the default: an object is one row."""
+    deserializer = _deserializer()
+    df = deserializer.deserialize_graphql({"data": {"x": {"id": 1, "name": "a"}}}, records_path="data.x")
+    assert df.to_dict(orient="records") == [{"id": 1, "name": "a"}]
+
+
+def test_records_path_to_connection_unwraps_edges() -> None:
+    deserializer = _deserializer()
+    response = {"data": {"customers": {"pageInfo": {"hasNextPage": False}, "edges": [{"cursor": "a", "node": {"dbId": 1}}]}}}
+    df = deserializer.deserialize_graphql(response, records_path="data.customers")
+    assert df.to_dict(orient="records") == [{"dbId": 1}]
+
+
+def test_default_records_path_is_data() -> None:
+    deserializer = _deserializer()
+    assert deserializer.deserialize_graphql({"data": {"users": [{"id": 1}]}})["id"].tolist() == [1]
+
+
+def test_default_records_path_without_data_key_parses_whole_payload() -> None:
+    """Backwards compatible with ``data.get("data", data)``: an already-unwrapped payload still yields rows."""
+    df = _deserializer().deserialize_graphql({"users": [{"id": 1}, {"id": 2}]})
+    assert df["id"].tolist() == [1, 2]
+
+
+def test_default_records_path_with_null_data_is_empty() -> None:
+    """``"data": null`` is present, so there is no fallback to the whole payload (which would hold ``errors``)."""
+    assert _deserializer().deserialize_graphql({"data": None, "errors": [{"message": "x"}]}).empty
+
+
+def test_explicit_records_path_without_data_key_stays_strict() -> None:
+    assert _deserializer().deserialize_graphql({"users": [{"id": 1}]}, records_path="data.users").empty
+
+
+def test_data_as_list_yields_rows() -> None:
+    """Not valid GraphQL (``data`` is always an object), but tolerated: each item becomes a row."""
+    df = _deserializer().deserialize_graphql({"data": [{"id": 1}, {"id": 2}]})
+    assert df["id"].tolist() == [1, 2]
+
+
+def test_bare_list_payload_returns_empty_dataframe() -> None:
+    """A GraphQL response is always an object; a bare list is not read (pass the full response instead)."""
+    assert _deserializer().deserialize_graphql([{"id": 1}, {"id": 2}]).empty
+
+
+def test_top_level_edges_are_unwrapped() -> None:
+    """{"data": {"edges": [...]}} → node fields (used to give a 'node' column of dicts)."""
+    deserializer = _deserializer()
+    df = deserializer.deserialize_graphql({"data": {"edges": [{"node": {"id": 1}}, {"node": {"id": 2}}]}})
+    assert df.to_dict(orient="records") == [{"id": 1}, {"id": 2}]
+
+
+def test_edges_with_typename_are_unwrapped() -> None:
+    """``__typename`` on the edge is metadata: selecting it must not change the output schema."""
+    deserializer = _deserializer()
+    edges = [
+        {"__typename": "CustomerEdge", "cursor": "a", "node": {"dbId": 1}},
+        {"__typename": "CustomerEdge", "node": {"dbId": 2}},
+    ]
+    df = deserializer.deserialize_graphql({"data": {"customers": {"edges": edges}}}, records_path="data.customers.edges")
+    assert df.to_dict(orient="records") == [{"dbId": 1}, {"dbId": 2}]
+
+
+def test_node_typename_is_kept_as_a_column() -> None:
+    """``__typename`` selected on the node is record data and stays."""
+    deserializer = _deserializer()
+    edges = [{"__typename": "CustomerEdge", "cursor": "a", "node": {"__typename": "Customer", "dbId": 1}}]
+    df = deserializer.deserialize_graphql({"data": {"customers": {"edges": edges}}}, records_path="data.customers.edges")
+    assert df.to_dict(orient="records") == [{"__typename": "Customer", "dbId": 1}]
+
+
+def test_edge_fields_are_merged_into_the_node_row() -> None:
+    """Edge data (e.g. a score) joins the node's fields; cursor and __typename describe the edge and are dropped."""
+    deserializer = _deserializer()
+    edges = [{"__typename": "CustomerEdge", "cursor": "a", "score": 0.9, "node": {"dbId": 1}}]
+    df = deserializer.deserialize_graphql({"data": {"customers": {"edges": edges}}}, records_path="data.customers.edges")
+    assert df.to_dict(orient="records") == [{"score": 0.9, "dbId": 1}]
+
+
+# Membership edges from the review: an extra edge field, a plain edge and a null node.
+MEMBER_EDGES = [
+    {"cursor": "a", "node": {"id": 1}},
+    {"cursor": "b", "role": "admin", "node": {"id": 2}},
+    {"cursor": "c", "role": "guest", "node": None},
+]
+
+
+@pytest.mark.parametrize(
+    ("response", "records_path"),
+    [
+        pytest.param({"data": {"members": {"edges": MEMBER_EDGES}}}, "data.members.edges", id="records_path at edges"),
+        pytest.param(
+            {"data": {"members": {"pageInfo": {"hasNextPage": False}, "edges": MEMBER_EDGES}}},
+            "data.members",
+            id="records_path at connection",
+        ),
+        pytest.param({"data": {"members": {"edges": MEMBER_EDGES}}}, "data", id="default path"),
+        pytest.param({"data": {"edges": MEMBER_EDGES}}, "data", id="top-level edges"),
+    ],
+)
+def test_edges_give_the_same_rows_on_every_path(response: dict[str, Any], records_path: str) -> None:
+    """One rule for every path: node fields + edge fields, null node skipped, no cursor/node columns."""
+    df = _deserializer().deserialize_graphql(response, records_path=records_path)
+    assert set(df.columns) == {"id", "role"}
+    assert df["id"].tolist() == [1, 2]
+    assert pd.isna(df["role"].iloc[0])  # the plain edge has no role
+    assert df["role"].iloc[1] == "admin"
+
+
+def test_node_field_wins_over_edge_field_with_the_same_name() -> None:
+    df = _edges_frame([{"cursor": "a", "id": "edge-id", "since": 2020, "node": {"id": 1}}])
+    assert df.to_dict(orient="records") == [{"id": 1, "since": 2020}]
+
+
+def test_edge_without_node_selected_is_kept_as_is() -> None:
+    """Only the cursor selected: nothing to unwrap."""
+    assert _edges_frame([{"cursor": "a"}, {"cursor": "b"}])["cursor"].tolist() == ["a", "b"]
+
+
+def test_edge_with_non_dict_node_is_kept_as_is() -> None:
+    """``node`` selected as a scalar (not an object): nothing to unwrap into, so the edge stays a row."""
+    df = _edges_frame([{"cursor": "a", "node": "Q3VzdG9tZXI6MQ=="}])
+    assert df.to_dict(orient="records") == [{"cursor": "a", "node": "Q3VzdG9tZXI6MQ=="}]
+
+
+def test_null_edge_element_is_skipped() -> None:
+    assert _edges_frame([None, {"cursor": "a", "node": {"dbId": 1}}]).to_dict(orient="records") == [{"dbId": 1}]
+
+
+def _edges_frame(edges: list[dict[str, Any]], records_path: str = "data.customers.edges") -> pd.DataFrame:
+    return _deserializer().deserialize_graphql({"data": {"customers": {"edges": edges}}}, records_path=records_path)
+
+
+def test_null_node_edges_are_skipped() -> None:
+    """A null node is no record: no junk row, no cursor/node columns, int dtype kept."""
+    df = _edges_frame([{"cursor": "a", "node": {"dbId": 1}}, {"cursor": "b", "node": None}, {"cursor": "c", "node": {"dbId": 3}}])
+    assert df.to_dict(orient="records") == [{"dbId": 1}, {"dbId": 3}]
+    assert str(df["dbId"].dtype) == "int64"
+
+
+def test_null_node_edge_with_typename_is_skipped() -> None:
+    df = _edges_frame([{"__typename": "CustomerEdge", "cursor": "b", "node": None}, {"cursor": "a", "node": {"dbId": 1}}])
+    assert df.to_dict(orient="records") == [{"dbId": 1}]
+
+
+def test_only_null_node_edges_give_empty_frame() -> None:
+    assert _edges_frame([{"cursor": "a", "node": None}]).empty
+
+
+def test_null_node_edge_with_other_fields_is_skipped() -> None:
+    """A null node is no record, whatever else the edge carries."""
+    assert _edges_frame([{"cursor": "a", "score": 0.9, "node": None}]).empty
+
+
+def test_row_with_null_node_field_is_kept() -> None:
+    df = _deserializer().deserialize_graphql({"data": {"things": [{"id": 1, "node": None}, {"id": 2, "node": None}]}})
+    assert df["id"].tolist() == [1, 2]
+
+
+def test_connection_path_skips_null_node_edges() -> None:
+    """Same result when records_path points at the connection (``_extract_relay_nodes``)."""
+    edges = [{"cursor": "a", "node": {"dbId": 1}}, {"cursor": "b", "node": None}]
+    response = {"data": {"customers": {"pageInfo": {"hasNextPage": False}, "edges": edges}}}
+    df = _deserializer().deserialize_graphql(response, records_path="data.customers")
+    assert df.to_dict(orient="records") == [{"dbId": 1}]
+    assert str(df["dbId"].dtype) == "int64"
+
+
+def test_row_with_node_field_is_not_unwrapped() -> None:
+    """Only lists under ``edges`` are edge lists; elsewhere a ``node`` field is data."""
+    deserializer = _deserializer()
+    rows = [{"id": 1, "node": {"x": 1}}, {"id": 2, "node": {"x": 2}}]
+    df = deserializer.deserialize_graphql({"data": {"things": rows}})
+    assert df["id"].tolist() == [1, 2]
+    assert df["node"].tolist() == [{"x": 1}, {"x": 2}]

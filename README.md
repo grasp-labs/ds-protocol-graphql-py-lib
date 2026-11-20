@@ -133,6 +133,65 @@ uv run pytest tests/test_example.py -v
 - **Pre-commit Hooks**: Automated code quality checks
 - **Docker Support**: Containerized build environment
 
+## Pagination and incremental reads
+
+`GraphqlDataset.read()` sends one request by default. Set `read.pagination` to
+fetch every page of a Relay-style cursor connection inside the same `read()`,
+and add `read.incremental` to read only rows after a stored watermark.
+
+```python
+GraphqlReadSettings(
+    query="""
+    query read($first: Int!, $after: String, $since: Int = 0) {
+      customers(first: $first, after: $after, filter: { dbId_gt: $since }) {
+        pageInfo { hasNextPage }
+        edges { cursor node { dbId description } }
+      }
+    }
+    """,
+    pagination=PaginationSettings(
+        strategy=PaginationStrategy.CURSOR,
+        items_path="data.customers.edges",  # page records = output rows
+        max_pages=None,                     # optional limit per read()
+        cursor=CursorPaginationSettings(
+            # last edge's cursor; with pageInfo.endCursor point there instead
+            cursor_path="data.customers.edges.-1.cursor",
+            has_next_path="data.customers.pageInfo.hasNextPage",
+            cursor_variable="after",
+            page_size_variable="first",
+            page_size=100,
+        ),
+    ),
+    incremental=IncrementalSettings(variable="since", watermark_path="dbId"),
+)
+```
+
+- **Output rows** come from `items_path`. A list under `edges` is read as Relay
+  edges: each row is the node's fields plus the edge's own fields, without
+  `cursor`; edges with a `null` node are skipped.
+- **Checkpoint.** `dataset.checkpoint` holds the state between runs; the caller
+  stores and restores it:
+  - `checkpoint["pagination"]`: the cursor to continue from after a failed
+    read. Removed when a read completes.
+  - `checkpoint["incremental"]["watermark"]`: sent as `$since` on the next
+    read. Moves only after a complete read, to the highest value read so far,
+    and never backwards.
+- **Failures and resume.** A failed read keeps the pages it fetched in `output`
+  and leaves the watermark unchanged. The next `read()` continues after the
+  saved cursor with the same `$since`, so no page is skipped or read twice.
+- **`max_pages`** limits the pages fetched by one `read()`. Hitting it raises
+  `ReadError` and keeps the cursor; the next read fetches the next batch.
+- **Incremental requires pagination**; settings with `incremental` but no
+  `pagination` are rejected.
+- **First run:** no watermark is sent yet, so give the variable a default in
+  the query (`$since: Int = 0`) when the API treats a `null` bound as "match
+  nothing".
+
+Full examples:
+
+- [Xledger](examples/08_paginate_incremental_xledger.py)
+- [Visma Business NXT](examples/09_paginate_incremental_visma_bnxt.py)
+
 ## Requirements
 
 - Python 3.9+

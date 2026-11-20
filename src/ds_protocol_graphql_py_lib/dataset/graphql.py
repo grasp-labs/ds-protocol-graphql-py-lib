@@ -47,14 +47,18 @@ from ds_resource_plugin_py_lib.common.resource.dataset.errors import (
     ListError,
     ReadError,
 )
-from ds_resource_plugin_py_lib.common.resource.errors import NotSupportedError
+from ds_resource_plugin_py_lib.common.resource.errors import NotSupportedError, ResourceException
 from ds_resource_plugin_py_lib.common.resource.linked_service.errors import (
+    AuthenticationError,
+    AuthorizationError,
     ConnectionError,
 )
 from ds_resource_plugin_py_lib.common.serde.serialize import PandasSerializer
 
 from ..enums import ResourceType
-from ..serde.deserializer import GraphqlDeserializer
+from ..serde.deserializer import DEFAULT_RECORDS_PATH, GraphqlDeserializer
+from .incremental import IncrementalSettings
+from .pagination import Paginate, PaginationSettings
 
 logger = Logger.get_logger(__name__, package=True)
 
@@ -72,6 +76,29 @@ class GraphqlReadSettings(Serializable):
     """ Optional variables to include with the GraphQL query."""
     operation_name: str | None = None
     """ Optional operation name for the GraphQL query, used when the query contains multiple operations."""
+    records_path: str | None = None
+    """ Optional path to the list of records in the response, e.g. "data.useCompany.associate.items".
+
+    Each item in that list becomes one row of ``output``. For Relay ``edges``, a row is the
+    ``node`` plus any extra fields on the edge (``cursor`` is left out).
+
+    When unset: ``pagination.items_path`` if pagination is set, otherwise ``"data"``."""
+    pagination: PaginationSettings | None = None
+    """ Optional pagination settings. When unset, read() issues a single request."""
+    incremental: IncrementalSettings | None = None
+    """
+    Optional incremental watermark rules, consulted by Paginate.
+
+    Requires ``pagination``: only paginated reads apply the watermark and keep
+    the checkpoint (``supports_checkpoint``), so setting it alone is an error.
+    """
+
+    def __post_init__(self) -> None:
+        if self.incremental is not None and self.pagination is None:
+            raise ValueError(
+                "GraphqlReadSettings.incremental requires pagination: the watermark is only "
+                "applied by paginated reads. Set read.pagination or remove read.incremental."
+            )
 
 
 @dataclass(kw_only=True)
@@ -156,19 +183,22 @@ class GraphqlDataset(
         """
         Indicate whether this provider supports incremental loads via checkpointing.
 
-        GraphQL provider does not yet support checkpoint-based incremental loads.
-        All reads are full loads.
+        True when pagination is configured: mid-run resume state is kept in
+        ``checkpoint["pagination"]`` until a read completes.
 
         Returns:
-            False, indicating checkpointing is not supported.
+            True if ``settings.read.pagination`` is set, else False.
         """
-        return False
+        return self.settings.read is not None and self.settings.read.pagination is not None
 
     def read(self) -> None:
         """
         Read Graphql dataset.
 
-        Sends a GraphQL query to the endpoint with the query, variables, and operation name
+        When ``settings.read.pagination`` is set, all pages are fetched via
+        :class:`Paginate` inside this single call (see "Pagination and
+        incremental reads" in README.md). Otherwise
+        sends a GraphQL query to the endpoint with the query, variables, and operation name
         specified in settings.read. Populates self.output with the result as a DataFrame.
 
         Handles various GraphQL response patterns via GraphqlDeserializer:
@@ -180,8 +210,12 @@ class GraphqlDataset(
             None. The result is stored in self.output as a DataFrame.
 
         Raises:
-            ConnectionError: If the linked service connection is not initialized.
-            ReadError: If read settings are not provided or if the GraphQL query fails.
+            ConnectionError: If the connection is not initialized, or the request
+                cannot reach the server (raised by the linked service's connection).
+            AuthenticationError: On HTTP 401 (raised by the linked service's connection).
+            AuthorizationError: On HTTP 403 (raised by the linked service's connection).
+            ReadError: If read settings are not provided, the GraphQL query fails,
+                or on any other HTTP error status (with that ``status_code``).
         """
         if self.linked_service.connection is None:
             raise ConnectionError(message="Connection is not initialized.") from None
@@ -191,6 +225,10 @@ class GraphqlDataset(
 
         if not self.deserializer:
             raise ReadError("Deserializer is not configured for GraphQL dataset")
+
+        if self.settings.read.pagination is not None:
+            Paginate.from_dataset(self).run(self)
+            return
 
         try:
             payload: dict[str, Any] = {
@@ -203,20 +241,29 @@ class GraphqlDataset(
             if self.settings.read.operation_name:
                 payload["operationName"] = self.settings.read.operation_name
 
-            result = self.linked_service.connection.session.post(
+            result = self.linked_service.connection.post(
                 url=self.settings.url,
                 json=payload,
                 headers=self.settings.headers,
             )
 
-            result.raise_for_status()
             response_data = result.json()
 
             self._check_for_graphql_read_error(response_data)
-            self.output = self.deserializer.deserialize_graphql(response_data)
+            self.output = self.deserializer.deserialize_graphql(
+                response_data,
+                records_path=self.settings.read.records_path or DEFAULT_RECORDS_PATH,
+            )
 
-        except ReadError:
+        except (AuthenticationError, AuthorizationError, ConnectionError, ReadError):
             raise
+        except ResourceException as exc:
+            # HTTP error status from the connection: same conversion as Paginate.run, keeping the status code.
+            raise ReadError(
+                message=exc.message,
+                status_code=exc.status_code,
+                details={**exc.details, "type": self.type.value},
+            ) from exc
         except Exception as e:
             raise ReadError(
                 message=f"Failed to read from GraphQL: {e!s}",
