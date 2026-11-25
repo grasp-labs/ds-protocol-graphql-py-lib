@@ -28,6 +28,7 @@ from ds_resource_plugin_py_lib.common.resource.linked_service.errors import (
     AuthorizationError,
     ConnectionError,
 )
+from ds_resource_plugin_py_lib.common.serde.deserialize import PandasDeserializer
 from ds_resource_plugin_py_lib.common.serde.serialize import PandasSerializer
 
 from ds_protocol_graphql_py_lib import GraphqlDeserializer
@@ -404,8 +405,8 @@ def test_read_nested_dict_with_array_field():
     assert dataset.output.iloc[3]["name"] == "person"
 
 
-def test_read_no_deserializer_raises_error():
-    """Test that read() raises ReadError if deserializer is not configured."""
+def test_read_none_deserializer_falls_back_to_default():
+    """deserializer=None (e.g. null from a stored config) becomes the default, and read() works."""
     linked_service = HttpLinkedService(
         settings=HttpLinkedServiceSettings(
             host="https://example.graphql.api/",
@@ -428,12 +429,69 @@ def test_read_no_deserializer_raises_error():
         version="1.0.0",
     )
 
+    assert isinstance(dataset.deserializer, GraphqlDeserializer)
+    assert dataset.deserializer.format == DatasetStorageFormatType.JSON
+
     mock_connection = MagicMock()
+    mock_connection.post.return_value.json.return_value = {"data": {"allPosts": [{"id": 1}, {"id": 2}]}}
 
     with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
         mock_prop.return_value = mock_connection
-        with pytest.raises(ReadError, match="Deserializer is not configured"):
-            dataset.read()
+        dataset.read()
+
+    assert dataset.output["id"].tolist() == [1, 2]
+
+
+def test_other_deserializer_type_is_replaced_with_graphql_deserializer() -> None:
+    """A non-GraphQL deserializer passed in code is replaced, so read() never hits a missing deserialize_graphql."""
+    dataset = GraphqlDataset(
+        deserializer=PandasDeserializer(format=DatasetStorageFormatType.JSON),  # type: ignore[arg-type]
+        settings=GraphqlDatasetSettings(
+            url="https://example.graphql.api/graphql",
+            read=GraphqlReadSettings(query="{ allPosts { id } }"),
+        ),
+        linked_service=HttpLinkedService(
+            settings=HttpLinkedServiceSettings(host="https://example.graphql.api/", auth_type=AuthType.NO_AUTH),
+            id=uuid.uuid4(),
+            name="test_linked_service",
+            version="1.0.0",
+        ),
+        id=uuid.uuid4(),
+        name="test_dataset",
+        version="1.0.0",
+    )
+    assert type(dataset.deserializer) is GraphqlDeserializer
+    assert dataset.deserializer.format == DatasetStorageFormatType.JSON
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        pytest.param({"deserializer": None}, id="null"),
+        pytest.param({}, id="missing"),
+        pytest.param({"deserializer": {"format": "json", "kwargs": {}}}, id="object"),
+    ],
+)
+def test_deserialized_config_always_has_graphql_deserializer(stored: dict[str, Any]) -> None:
+    """A stored config with deserializer null, missing or set still loads with a GraphqlDeserializer."""
+    dataset = GraphqlDataset(
+        settings=GraphqlDatasetSettings(
+            url="https://example.graphql.api/graphql",
+            read=GraphqlReadSettings(query="{ allPosts { id } }"),
+        ),
+        linked_service=HttpLinkedService(
+            settings=HttpLinkedServiceSettings(host="https://example.graphql.api/", auth_type=AuthType.NO_AUTH),
+            id=uuid.uuid4(),
+            name="test_linked_service",
+            version="1.0.0",
+        ),
+        id=uuid.uuid4(),
+        name="test_dataset",
+        version="1.0.0",
+    )
+    config = {key: value for key, value in dataset.serialize().items() if key != "deserializer"}
+    loaded = GraphqlDataset.deserialize({**config, **stored})
+    assert isinstance(loaded.deserializer, GraphqlDeserializer)
 
 
 def test_read_json_parse_error_wrapped():

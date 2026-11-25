@@ -532,8 +532,8 @@ def test_delete_with_additional_variables():
     assert variables["force"] is True
 
 
-def test_delete_no_deserializer_raises_error():
-    """Test that delete() raises DeleteError if deserializer is not configured."""
+def test_delete_none_deserializer_falls_back_to_default():
+    """deserializer=None (e.g. null from a stored config) becomes the default GraphqlDeserializer."""
     linked_service = HttpLinkedService(
         settings=HttpLinkedServiceSettings(
             host="https://example.graphql.api/",
@@ -559,10 +559,5 @@ def test_delete_no_deserializer_raises_error():
         version="1.0.0",
     )
 
-    mock_connection = MagicMock()
-    dataset.input = pd.DataFrame({"id": [1]})
-
-    with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
-        mock_prop.return_value = mock_connection
-        with pytest.raises(DeleteError, match="Deserializer is not configured"):
-            dataset.delete()
+    assert isinstance(dataset.deserializer, GraphqlDeserializer)
+    assert dataset.deserializer.format == DatasetStorageFormatType.JSON
