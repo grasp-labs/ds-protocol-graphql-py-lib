@@ -321,13 +321,6 @@ def test_drain_resumes_from_checkpoint() -> None:
     assert sent_variables(session) == [{"cid": 1, "filter": {}, "first": 50, "after": "c5"}]
 
 
-def test_drain_requires_deserializer() -> None:
-    dataset = visma_dataset()
-    dataset.deserializer = None
-    with pytest.raises(ValueError, match=r"requires dataset\.deserializer"):
-        drain(dataset, [])
-
-
 def test_drain_raises_on_graphql_errors() -> None:
     body = page(1, has_next=True, end_cursor="c1")
     body["errors"] = [{"message": "boom"}]
@@ -582,16 +575,6 @@ def test_run_strategy_errors_become_read_error_400() -> None:
     assert "made no progress" in exc_info.value.message
     assert exc_info.value.status_code == 400
     assert dataset.output["associateNo"].tolist() == [1, 2]
-
-
-def test_run_missing_deserializer_becomes_read_error() -> None:
-    dataset = visma_dataset()
-    paginate = Paginate.from_dataset(dataset)
-    dataset.deserializer = None
-    with pytest.raises(ReadError, match=r"requires dataset\.deserializer") as exc_info:
-        paginate.run(dataset)
-    assert exc_info.value.status_code == 400
-    assert dataset.output.empty
 
 
 # --------------------------------------------------------------------------- run: incremental watermark

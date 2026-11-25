@@ -697,8 +697,8 @@ def test_validate_create_settings_no_connection_raises_error():
             dataset.create()
 
 
-def test_create_no_deserializer_raises_error():
-    """Test that create() raises CreateError if deserializer is not configured."""
+def test_create_none_deserializer_falls_back_to_default():
+    """deserializer=None (e.g. null from a stored config) becomes the default GraphqlDeserializer."""
     linked_service = HttpLinkedService(
         settings=HttpLinkedServiceSettings(
             host="https://example.graphql.api/",
@@ -724,10 +724,5 @@ def test_create_no_deserializer_raises_error():
         version="1.0.0",
     )
 
-    mock_connection = MagicMock()
-    dataset.input = pd.DataFrame({"title": ["Test"]})
-
-    with patch.object(type(linked_service), "connection", new_callable=PropertyMock) as mock_prop:
-        mock_prop.return_value = mock_connection
-        with pytest.raises(CreateError, match="Deserializer is not configured"):
-            dataset.create()
+    assert isinstance(dataset.deserializer, GraphqlDeserializer)
+    assert dataset.deserializer.format == DatasetStorageFormatType.JSON

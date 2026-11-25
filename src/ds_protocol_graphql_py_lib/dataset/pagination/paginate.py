@@ -161,15 +161,13 @@ class Paginate:
         this method raises mid-drain.
 
         Raises:
-            ValueError: If the deserializer is missing or the checkpoint strategy mismatches.
+            ValueError: If the checkpoint strategy mismatches.
             ReadError: If GraphQL returns errors or ``max_pages`` is exceeded.
         """
         if frames is None:
             frames = []
 
         deserializer = dataset.deserializer
-        if deserializer is None:
-            raise ValueError("Paginate requires dataset.deserializer")
 
         pagination = self.pagination
         strategy = self.strategy

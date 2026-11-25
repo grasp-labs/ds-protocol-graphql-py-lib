@@ -153,6 +153,10 @@ GraphqlDatasetSettingsType = TypeVar(
 )
 
 
+def _default_deserializer() -> GraphqlDeserializer:
+    return GraphqlDeserializer(format=DatasetStorageFormatType.JSON)
+
+
 @dataclass(kw_only=True)
 class GraphqlDataset(
     TabularDataset[
@@ -170,9 +174,12 @@ class GraphqlDataset(
     settings: GraphqlDatasetSettingsType
     linked_service: HttpLinkedServiceType
 
-    deserializer: GraphqlDeserializer | None = field(
-        default_factory=lambda: GraphqlDeserializer(format=DatasetStorageFormatType.JSON),
-    )
+    deserializer: GraphqlDeserializer = field(default_factory=_default_deserializer)
+
+    def __post_init__(self) -> None:
+        """Always use a GraphqlDeserializer: anything else (e.g. null from a stored config) is replaced."""
+        if not isinstance(self.deserializer, GraphqlDeserializer):
+            self.deserializer = _default_deserializer()  # type: ignore[unreachable]
 
     @property
     def type(self) -> ResourceType:
@@ -222,9 +229,6 @@ class GraphqlDataset(
 
         if not self.settings.read:
             raise ReadError("GraphQL read settings must be provided in settings.read")
-
-        if not self.deserializer:
-            raise ReadError("Deserializer is not configured for GraphQL dataset")
 
         if self.settings.read.pagination is not None:
             Paginate.from_dataset(self).run(self)
@@ -316,9 +320,6 @@ class GraphqlDataset(
         if self.settings.create is None:
             raise CreateError("Create settings must be provided in settings.create")
 
-        if not self.deserializer:
-            raise CreateError("Deserializer is not configured for GraphQL dataset")
-
         self._validate_create_settings()
 
         try:
@@ -405,9 +406,6 @@ class GraphqlDataset(
 
         if not self.settings.delete:
             raise DeleteError("GraphQL delete settings must be provided in settings.delete")
-
-        if not self.deserializer:
-            raise DeleteError("Deserializer is not configured for GraphQL dataset")
 
         for col in self.settings.delete.identity_columns:
             if col not in self.input.columns:
